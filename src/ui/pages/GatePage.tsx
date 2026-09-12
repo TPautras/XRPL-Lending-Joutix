@@ -1,0 +1,295 @@
+import { LedgerEntry, type Client } from 'xrpl'
+import { NeedsDemo, Panel, SectionHeading } from '../components/Panel'
+import { AddressLink, ResultPill, TxLink } from '../components/TxLink'
+import { useAppState } from '../lib/appState'
+import { useLedgerQuery } from '../lib/ledger'
+import { eur, isoToDateTime } from '../lib/format'
+import { GATE_SUBJECT, GATE_VAULT, RECORDED_GATE, RECORDED_RUN_DATE, type GateRow } from '../lib/evidence'
+import { hrefFor } from '../lib/router'
+
+/** Must match `flows/credentials.ts credentialType()` — hex of the ASCII type, uppercase. */
+const DEFAULT_CREDENTIAL_TYPE = Array.from('TRUSTFLOW_KYC')
+  .map((char) => char.charCodeAt(0).toString(16).padStart(2, '0'))
+  .join('')
+  .toUpperCase()
+
+/** XLS-70 §3: set only by a successful `CredentialAccept`. xrpl.js types `Credential.Flags`
+ * as `number | CredentialFlags`, so both shapes are handled rather than assumed. */
+const LSF_CREDENTIAL_ACCEPTED = 0x00010000
+
+function isAccepted(credential: LedgerEntry.Credential): boolean {
+  const flags = credential.Flags
+  return typeof flags === 'number' ? (flags & LSF_CREDENTIAL_ACCEPTED) !== 0 : Boolean(flags.lsfAccepted)
+}
+
+const ROLE_LABEL: Record<string, string> = {
+  authority: 'Authority (issuer of the credential)',
+  issuer: 'TFEUR issuer',
+  manager: 'Manager / loan broker',
+  sme: 'SME borrower',
+  smeUncredentialed: 'Uncredentialed SME (the intruder)',
+  investorA: 'Investor A',
+  investorB: 'Investor B',
+  insurer: 'Insurer',
+}
+
+type CredentialState = 'missing' | 'issued, not accepted' | 'accepted'
+
+interface RoleRow {
+  role: string
+  address: string
+  credential: CredentialState
+  balance: string | null
+}
+
+async function credentialObjects(client: Client, account: string): Promise<LedgerEntry.Credential[]> {
+  const { result } = await client.request({
+    command: 'account_objects',
+    account,
+    type: 'credential',
+    ledger_index: 'validated',
+  })
+  return result.account_objects.filter(
+    (object): object is LedgerEntry.Credential => object.LedgerEntryType === 'Credential',
+  )
+}
+
+async function mptBalance(client: Client, account: string, issuanceId: string): Promise<string | null> {
+  try {
+    const { result } = await client.request({ command: 'account_objects', account, type: 'mptoken' })
+    // One cast, and the only one in this app: xrpl.js 5.2.0 exports the `MPToken` model and
+    // accepts `type: 'mptoken'` as a filter, but `MPToken` is missing from the `LedgerEntry`
+    // union that types `account_objects`, so the response cannot describe what it returns.
+    // Logged in docs/FRICTION.md.
+    const objects = result.account_objects as unknown as LedgerEntry.MPToken[]
+    const held = objects.find(
+      (object) => object.LedgerEntryType === 'MPToken' && object.MPTokenIssuanceID === issuanceId,
+    )
+    return held?.MPTAmount ?? '0'
+  } catch {
+    // Fires when the account itself is not on the ledger yet (`actNotFound`) or the RPC
+    // hiccups — an account that simply holds no MPT returns an empty list, not an error.
+    // Either way, report the absence rather than a confident zero.
+    return null
+  }
+}
+
+/**
+ * Reads each participant's credential state off the ledger. Both owner directories are
+ * checked on purpose: an *unaccepted* credential sits in the issuer's directory, not the
+ * subject's, so a subject-side lookup alone reports "no credential" for a credential that
+ * demonstrably exists — the single easiest way to build a gate that refuses everyone.
+ */
+async function readRoles(
+  client: Client,
+  accounts: Record<string, string>,
+  authority: string,
+  credentialType: string,
+  issuanceId: string | undefined,
+): Promise<RoleRow[]> {
+  const issued = await credentialObjects(client, authority).catch(() => [])
+
+  return Promise.all(
+    Object.entries(accounts).map(async ([role, address]) => {
+      let credential: CredentialState = 'missing'
+      const mine = await credentialObjects(client, address).catch(() => [])
+      const own = mine.find((o) => o.Issuer === authority && o.CredentialType === credentialType)
+      const held = own ?? issued.find((o) => o.Subject === address && o.CredentialType === credentialType)
+      if (held) credential = isAccepted(held) ? 'accepted' : 'issued, not accepted'
+      const balance = issuanceId ? await mptBalance(client, address, issuanceId) : null
+      return { role, address, credential, balance }
+    }),
+  )
+}
+
+const CREDENTIAL_TONE: Record<CredentialState, string> = {
+  accepted: 'pill-success',
+  'issued, not accepted': 'pill-expected',
+  missing: 'pill-failure',
+}
+
+function RolesPanel() {
+  const { state } = useAppState()
+  const accounts = state?.accounts
+  const authority = accounts?.authority
+  const credentialType = state?.credentialType ?? DEFAULT_CREDENTIAL_TYPE
+  const issuanceId = state?.mptIssuanceId
+
+  const { data, error } = useLedgerQuery<RoleRow[]>(
+    !accounts || !authority
+      ? null
+      : (client) => readRoles(client, accounts, authority, credentialType, issuanceId),
+    [accounts && Object.keys(accounts).join(','), authority, credentialType, issuanceId],
+    // Eight accounts means ~17 requests a pass; this table does not need to move every 4s.
+    { refreshEveryTicks: 4 },
+  )
+
+  if (!accounts || !authority) {
+    return (
+      <Panel title="Participants" tone="off">
+        <NeedsDemo
+          what="The role addresses are written to state.json by the demo runner"
+          command="npm run demo setup"
+        />
+      </Panel>
+    )
+  }
+
+  return (
+    <Panel
+      title="Participants"
+      aside={<span className="chip">credential type <code>TRUSTFLOW_KYC</code></span>}
+    >
+      <div className="table-scroll">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Role</th>
+              <th>Account</th>
+              <th>Credential</th>
+              <th className="num">TFEUR</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(data ?? []).map((row) => (
+              <tr key={row.role}>
+                <th scope="row">{ROLE_LABEL[row.role] ?? row.role}</th>
+                <td>
+                  <AddressLink address={row.address} />
+                </td>
+                <td>
+                  <span className={`pill ${CREDENTIAL_TONE[row.credential]}`}>{row.credential}</span>
+                </td>
+                <td className="num">{row.balance === null ? '—' : eur(row.balance)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {!data && <p className="muted small">Reading credential objects…</p>}
+      {error && <p className="muted small">Last read failed: {error}</p>}
+      <p className="muted small">
+        Read live with <code>account_objects type=credential</code> against both the subject’s and
+        the issuer’s owner directory — an unaccepted credential lives in the issuer’s.
+      </p>
+    </Panel>
+  )
+}
+
+function MatrixPanel() {
+  const { state } = useAppState()
+  const live = state?.gate
+  const rows: GateRow[] = live?.observations ?? RECORDED_GATE
+
+  return (
+    <Panel
+      title="What the ledger answered"
+      aside={
+        <span className="chip">
+          {live ? `live · ${isoToDateTime(live.ts)}` : `recorded run · ${RECORDED_RUN_DATE}`}
+        </span>
+      }
+    >
+      <div className="table-scroll">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Credential state</th>
+              <th>Transaction</th>
+              <th>Result</th>
+              <th>Hash</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={`${row.state}-${row.action}-${index}`}>
+                <th scope="row">{row.state}</th>
+                <td>
+                  <code>{row.action}</code>
+                  {row.note && <span className="muted small"> — {row.note}</span>}
+                </td>
+                <td>
+                  <ResultPill result={row.result} type={row.action} />
+                </td>
+                <td>
+                  <TxLink hash={row.hash} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted small">
+        One account (<AddressLink address={GATE_SUBJECT} />) walked through every credential state
+        against the private vault <code>{GATE_VAULT.slice(0, 12)}…{GATE_VAULT.slice(-6)}</code>.
+        Reproduce with <code>npm run demo gate</code> — it is idempotent.
+      </p>
+    </Panel>
+  )
+}
+
+/**
+ * Pitch 3:30–4:00 — the "Loaded" flavour on screen. Two things have to land here: the
+ * four-state credential walk, and the fact that withdrawal is deliberately never gated.
+ */
+export function GatePage() {
+  return (
+    <div className="page">
+      <SectionHeading sub="Every participant needs a Credential accepted by a PermissionedDomain before they can deposit, borrow or hold shares">
+        The gate
+      </SectionHeading>
+
+      <RolesPanel />
+      <MatrixPanel />
+
+      <div className="grid grid-2">
+        <Panel title="An unaccepted credential grants nothing" tone="warn">
+          <p>
+            The <code>Credential</code> object exists on the ledger the moment the issuer creates
+            it, and its holder is still refused — exactly as if it did not exist.{' '}
+            <code>CredentialAccept</code> is load-bearing, not bookkeeping.
+          </p>
+          <p className="muted small">
+            Skipping it builds a gate that silently refuses everyone. XLS-70 §3: “a credential
+            should not be considered valid until it has been accepted.”
+          </p>
+        </Panel>
+
+        <Panel title="Withdrawal is deliberately ungated">
+          <p>
+            Revocation closes the door without trapping anyone: the same account is refused on the
+            way <strong>in</strong> (<code>tecNO_AUTH</code>) and served on the way{' '}
+            <strong>out</strong> (<code>tesSUCCESS</code>).
+          </p>
+          <p className="muted small">
+            This is a ledger guarantee — <code>VaultWithdraw</code> does not consult the
+            permissioned domain (XLS-65 §7) — not our leniency. An investor whose credential
+            expires must never be locked out of their own funds.
+          </p>
+        </Panel>
+      </div>
+
+      <Panel title="And the part the gate does not cover" tone="warn">
+        <p>
+          <code>LoanSet</code> never consults the vault’s <code>PermissionedDomain</code>. XLS-66
+          §3.8.5.2 lists 24 failure conditions and none of them checks{' '}
+          <code>MPTokenIssuance(Vault.ShareMPTID).DomainID</code>; its two <code>tecNO_AUTH</code>{' '}
+          cases are asset-holding authorization, a different question. An account refused{' '}
+          <code>VaultDeposit</code> with <code>tecNO_AUTH</code> was handed that same vault’s
+          assets as a loan in the very next transaction, on two independent runs.
+        </p>
+        <p>
+          <strong>This is not an exploit and we are not claiming one.</strong> <code>LoanSet</code>{' '}
+          is dual-signed, so the broker must still counter-sign and nobody can drain the reserve
+          unilaterally. The claim is precisely this: with a <code>PermissionedDomain</code>{' '}
+          configured, an uncredentialed borrower is stopped by the broker’s off-ledger discretion
+          alone, not by the protocol.
+        </p>
+        <p className="muted small">
+          Full write-up, repro and proposed fix on <a href={hrefFor('/findings')}>Findings</a> and in{' '}
+          <code>FEEDBACK_REPORT.md §2</code>.
+        </p>
+      </Panel>
+    </div>
+  )
+}

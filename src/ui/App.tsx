@@ -1,36 +1,48 @@
-import { AccountPanel } from './components/AccountPanel'
-import { WalletConnectNotice } from './components/WalletConnectNotice'
+import type { ReactElement } from 'react'
+import { Nav } from './components/Nav'
 import { WalletConnector } from './components/WalletConnector'
 import { Dashboard } from './dashboard/Dashboard'
+import { ExplorerPage } from './pages/ExplorerPage'
+import { FindingsPage } from './pages/FindingsPage'
+import { GatePage } from './pages/GatePage'
+import { Home } from './pages/Home'
+import { InsurancePage } from './pages/InsurancePage'
+import { useRoute, type Route } from './lib/router'
 import { useWallet } from './wallet/WalletContext'
-import { NETWORK } from './wallet/config'
+import { NETWORK } from './lib/network'
+
+const PAGES: Record<Route, () => ReactElement> = {
+  '/': Home,
+  '/dashboard': Dashboard,
+  '/gate': GatePage,
+  '/insurance': InsurancePage,
+  '/explorer': ExplorerPage,
+  '/findings': FindingsPage,
+}
 
 export function App() {
+  const route = useRoute()
   const { error, clearError } = useWallet()
+  const Page = PAGES[route]
 
   return (
     <div className="app">
       <header className="header">
-        <div>
-          <h1>TrustFlow</h1>
-          <p className="muted">Invoice factoring + credit insurance on the XRP Ledger</p>
-        </div>
+        <a className="brand" href="#/">
+          <span className="brand-name">TrustFlow</span>
+          <span className="brand-sub">Invoice factoring + credit insurance on the XRP Ledger</span>
+        </a>
         <div className="header-right">
           <span className="chip">{NETWORK.name}</span>
+          {/* The only wallet-facing control in the app. It opens xrpl-connect's modal and
+              nothing else: no screen here submits a TrustFlow transaction (CLAUDE.md). */}
           <WalletConnector />
         </div>
       </header>
 
+      <Nav route={route} />
+
       <main className="main">
-        <Dashboard />
-
-        {/* The wallet connector is not needed to run or watch the demo — every
-            TrustFlow transaction is signed by the protocol scripts in src/protocol/
-            using seeds from .env. It's kept here for anyone who wants to poke at the
-            reserve manually with their own account. */}
-        <AccountPanel />
-        <WalletConnectNotice />
-
         {error && (
           <div className="panel panel-error">
             <strong>Wallet error</strong>
@@ -40,9 +52,15 @@ export function App() {
             </button>
           </div>
         )}
+
+        <Page />
       </main>
 
       <footer className="footer muted">
+        <span>
+          Read-only by construction — every transaction is signed by <code>src/protocol/</code>,
+          never by this page.
+        </span>
         <code>{NETWORK.wss}</code>
       </footer>
     </div>

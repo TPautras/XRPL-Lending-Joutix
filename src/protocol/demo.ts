@@ -14,8 +14,8 @@
  *             next time `setup` runs against them again — nothing here re-funds XRP)
  */
 import { getClient, disconnectClient } from './lib/client.js'
-import { loadWallets } from './lib/env.js'
-import { loadState, resetState } from './lib/state.js'
+import { loadWallets, ROLE_NAMES } from './lib/env.js'
+import { loadState, resetState, recordAccounts, recordGate } from './lib/state.js'
 import { waitUntilRippleTime } from './lib/time.js'
 import * as stablecoin from './flows/stablecoin.js'
 import { createDomain } from './flows/domain.js'
@@ -181,9 +181,15 @@ async function main() {
     return
   }
 
+  // Every command writes the role addresses out first: the webapp's Gate page reads
+  // them from state.json (it has no access to .env), and they are the one fact it needs
+  // that no ledger query can supply.
+  const roleAddresses = loadWallets()
+  recordAccounts(Object.fromEntries(ROLE_NAMES.map((role) => [role, roleAddresses[role].classicAddress])))
+
   if (command === 'setup') await cmdSetup()
   else if (command === 'prestage') await cmdPrestage()
-  else if (command === 'gate') await proveGate(await getClient(), loadWallets())
+  else if (command === 'gate') recordGate(await proveGate(await getClient(), loadWallets()))
   else if (command === 'verify') await verify(await getClient())
   else if (command === 'full') await cmdFull()
   else if (/^s([1-9]|10)$/.test(command)) await cmdStep(command)

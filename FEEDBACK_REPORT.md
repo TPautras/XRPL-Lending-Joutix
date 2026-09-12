@@ -165,6 +165,25 @@ this case, or an explicit callout in the `LoanPay` flag documentation that `tfLo
 invalid on a loan's last installment, would save every team that writes a "just repay everything"
 helper the same debugging cycle we hit.
 
+## 9. XLS-65/66 typings exist in xrpl.js but are hard to find, and `MPToken` is missing — client libraries
+
+**Category:** client libraries · **Severity:** low
+
+Two small things, one of which is our own mistake worth recording. xrpl.js 5.2.0 already types
+this whole surface — `vault_info` is in the request/response unions, and `Loan`, `LoanBroker`,
+`Vault`, `Credential`, `Escrow`, `LoanFlags`, `VaultFlags` are shipped models — but they are
+exported only through a namespace (`export * as LedgerEntry from './ledger'`), so the import is
+`import { LedgerEntry } from 'xrpl'` and then `LedgerEntry.Loan`. `import { Loan } from 'xrpl'`
+fails with "Did you mean 'LoanSetFlags'?", which reads as "not supported yet". We built our
+protocol layer against `Record<string, unknown>` and `as never` casts on that assumption; the
+webapp, written after we checked, needs none.
+
+The one real gap: `MPToken` is absent from the `LedgerEntry` union (which `MPTokenIssuance` is in),
+so a typed `account_objects` call with `type: 'mptoken'` — the normal way to read an MPT balance —
+cannot describe its own result, and narrowing on `LedgerEntryType === 'MPToken'` narrows to `never`.
+**Proposed fix:** add `MPToken` to the union, and show the namespace import once in the XLS-65/66
+integration docs.
+
 ---
 
 *Every claim in this report is backed by a real transaction on the Custom Hackathon Devnet — see

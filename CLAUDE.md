@@ -174,8 +174,8 @@ page plan.
 
 ## The webapp
 
-React 19 + Vite, `src/ui/`. No backend, no router yet. Today it is a single screen: `App.tsx`
-renders `dashboard/Dashboard.tsx` plus the `xrpl-connect` wallet scaffold.
+React 19 + Vite, `src/ui/`. No backend. `App.tsx` is a shell — header, `components/Nav.tsx`,
+footer — over a hash router with six pages (`pages/`, plus `dashboard/`), all of them read-only.
 
 **The one rule that shapes every page: the webapp is read-only.** No page gets a button that
 submits a TrustFlow transaction, for three independent reasons, and all three are worth saying
@@ -199,16 +199,18 @@ not to add a server.
 
 | Route | Page | Serves | Status |
 |---|---|---|---|
-| `/` | Home | Pitch 0:00–1:00 | to build |
-| `/dashboard` | Dashboard | Pitch 1:00–3:00 | ✅ exists |
-| `/gate` | The Gate | Pitch 3:30–4:00, the "Loaded" flavour | to build |
-| `/insurance` | Protection | Pitch 3:00–3:30, the wall | to build |
-| `/explorer` | Explorer | "Links to verified on-ledger transactions" | to build |
-| `/findings` | Findings | The 40%-weighted feedback, made legible | to build |
+| `/` | Home | Pitch 0:00–1:00 | ✅ built |
+| `/dashboard` | Dashboard | Pitch 1:00–3:00 | ✅ built |
+| `/gate` | The Gate | Pitch 3:30–4:00, the "Loaded" flavour | ✅ built |
+| `/insurance` | Protection | Pitch 3:00–3:30, the wall | ✅ built |
+| `/explorer` | Explorer | "Links to verified on-ledger transactions" | ✅ built |
+| `/findings` | Findings | The 40%-weighted feedback, made legible | ✅ built |
 
-Build order if time runs short: Home → Gate → Explorer → Findings → Insurance. The Dashboard
-already carries the demo; everything after Gate is presentation polish, and a half-finished page
-is worse on stage than an absent one.
+All six are in. What is *not* verified is how they look with live data: they have been
+typechecked, built and served, but never opened in a browser against a populated
+`state.json` (this machine has no `.env`, no `state/`, and no browser tooling in the
+session that wrote them). First thing to do on a machine with the seeds: `npm run demo
+setup`, then walk all six routes.
 
 **1. Home / landing.** The SME waiting 90 days, the four roles and who puts money in first-loss,
 and the one sentence that matters: every step is native XLS-65/66, no custom contracts. One CTA
@@ -242,9 +244,11 @@ and the product is not trustless. Name the party on screen. Do not draw an arrow
 **5. Explorer.** Every transaction the demo produced, newest first: timestamp, type, engine result
 code, and a link to `custom.xrpl.org`. Failures (`tecNO_AUTH`, `tecINSUFFICIENT_FUNDS`,
 `tecKILLED`) are first-class rows and rendered as *deliberate* where they were — the rejected
-transactions are evidence, not errors. **Prerequisite: `HackathonState.txLog` is declared in
-`lib/state.ts` and nothing ever appends to it.** `lib/submit.ts` has to push `{ts, type, result,
-hash}` on every submission before this page has anything to show.
+transactions are evidence, not errors. `lib/submit.ts` pushes `{ts, type, result, hash}` on every
+submission — successes, deliberate refusals and surprises alike — so the page renders
+`state.json`'s `txLog` newest-first, with a filter and a count of each kind. With no live log
+(a fresh clone, or after a devnet reset) it falls back to the verified hashes transcribed in
+`src/ui/lib/evidence.ts` and says on screen that it is a recorded run.
 
 **6. Findings.** The three discoveries as cards — the escrow wall, deposits-gated-but-loans-not,
 and the `PrincipalRequested` base-unit convention — each with its repro command, its transaction
@@ -254,16 +258,27 @@ different words, or the two drift apart by Sunday morning.
 
 ### Routing and known gaps
 
-- **No router.** Six static routes need ~30 lines of `hashchange` listener; prefer that over adding
-  `react-router-dom` for a demo that never deep-links. Hash routes also survive being opened from
-  `file://` or a stale `vite preview` if the dev server dies.
-- **The Dashboard displays base units as euros.** `eur()` in `Dashboard.tsx` formats
-  `AssetsTotal` (cents, `TFEUR_SCALE = 2`) straight into a `€` string, so every figure on screen
-  reads 100x high. Divide by `10 ** TFEUR_SCALE` at the render edge only — never do float math
-  before that, and never on a value about to be submitted.
-- **`txLog` is empty** — see Explorer above.
-- The `xrpl-connect` scaffold is kept but unused by the demo path; do not assume it fits any new
-  screen without checking.
+- **Router:** `lib/router.ts`, a `hashchange` listener over a six-entry route union — no
+  `react-router-dom`. Hash routes survive being opened from `file://` or a stale `vite preview`
+  if the dev server dies mid-pitch.
+- **Scaling is fixed and lives in one place.** `lib/format.ts` shifts base units to euros as
+  string arithmetic at the render edge (`eur()`, `sharePrice()`, `subtractBase()`); no float
+  ever touches a ledger amount, and the old 100x-high Dashboard figures are gone. Anything
+  derived from two amounts (assets deployed, cover shortfall) is BigInt, not subtraction in
+  doubles. The one float is `fillPercent()`, which only ever becomes a CSS bar width.
+- **One WebSocket for the whole app** (`lib/ledger.tsx`): connect with backoff, re-`subscribe`
+  after every reconnect, `tick` on each `ledgerClosed` as the refetch trigger, and
+  `refreshEveryTicks` for the fan-out-heavy Gate page. Switching routes never re-handshakes.
+- **Ledger reads are typed, not cast.** xrpl.js 5.2.0 does ship XLS-65/66 models — reachable as
+  `import { LedgerEntry } from 'xrpl'` then `LedgerEntry.Loan` / `LedgerEntry.LoanFlags` — so the
+  UI narrows on `LedgerEntryType` instead of casting `as never` the way `src/protocol` still does.
+  The single exception is `MPToken`, missing from the union; see `FEEDBACK_REPORT.md §9`.
+- **`demo.ts` now writes two extra facts into `state.json`** so the browser can read them:
+  `accounts` (role → address, written on every command) and `gate` (the last `npm run demo gate`
+  matrix, hashes included). The Gate page prefers those over the transcribed fallback.
+- The `xrpl-connect` scaffold is kept and now appears only on Home, as `AccountPanel` plus the
+  WalletConnect notice; the demo path does not use it. Do not assume it fits any new screen
+  without checking.
 
 ## Pitch (4 minutes)
 

@@ -137,10 +137,10 @@ at each, probes the borrow side, and prints the access matrix reproduced above. 
 it resets the account to uncredentialed and tops up the balances and vault liquidity it needs — so
 it can be re-run for a second confirmation at any time.
 
-`npm run dev` starts a read-only dashboard (share price, cushion, loan status, insurance
-state, live tx feed) driven purely by ledger queries against the hackathon devnet — it
-never signs anything; every transaction above is signed by the protocol scripts using the
-seeds in `.env`.
+`npm run dev` starts the read-only webapp on `localhost:5173` (see [Webapp](#webapp)) — six
+screens driven purely by ledger queries against the hackathon devnet plus the object IDs the
+scripts wrote to disk. It never signs anything; every transaction above is signed by the protocol
+scripts using the seeds in `.env`.
 
 `npm run demo full` runs `setup` + `prestage` + every step end to end, including the real
 wall-clock wait for Loan B to become defaultable — useful for a full rehearsal, not for
@@ -209,17 +209,51 @@ purpose:
   base-unit denominated for an MPT-funded loan — so `flows/loan.ts` scales `PrincipalRequested` on
   the way in but does *not* re-scale `TotalValueOutstanding`/`PeriodicPayment` on the way out.
 
-**The dashboard (`src/ui/dashboard/`) is read-only by construction** — `useDashboard.ts` only ever
-calls `client.request()` (never signs or submits), polling `public/state.json` for object IDs and
-subscribing to `ledgerClosed` for live refreshes. It's driven entirely by what the protocol scripts
-already wrote to disk, so it can safely run alongside a live demo without any risk of it firing a
-transaction by accident.
+**The webapp (`src/ui/`) is read-only by construction** — every ledger call goes through
+`lib/ledger.tsx`'s shared client and only ever uses `client.request()`. Nothing in the browser
+signs or submits, so it can run alongside a live demo with no risk of firing a transaction by
+accident. See [Webapp](#webapp) below.
 
 **Friction logging (`lib/friction.ts`)** appends timestamped entries to `docs/FRICTION.md`
 automatically from the rejection flows, the gate probes (`flows/gate.ts` logs whichever way the
 borrow-side experiment comes out, and would log a stranded-withdrawal too), and a couple of
 self-checks (e.g. the `PrincipalRequested` scale check in `originate()`) — manual entries use the
 same format for anything hit outside the scripts (docs, tooling, faucet).
+
+## Webapp
+
+`npm run dev` → `localhost:5173`. React 19 + Vite, no backend, no router library: six hash routes
+over a `hashchange` listener (`src/ui/lib/router.ts`), which also means the built page still works
+from `file://` or a stale `vite preview` if the dev server dies mid-pitch.
+
+| Route | Page | What it shows |
+|---|---|---|
+| `/` | Home | The problem, the four roles, the "no custom contracts" claim. Static — renders with the devnet down |
+| `/dashboard` | Dashboard | Share price, `AssetsTotal`/`AssetsAvailable`, `LossUnrealized`, the manager's cushion against `CoverRateMinimum`, both loans with their flags and grace-period countdown, the insurance state, and a ledger-close feed |
+| `/gate` | The Gate | Every role account with its live credential state and TFEUR balance, plus the four-state access matrix with hashes |
+| `/insurance` | Protection | The escrow as a diagram, its live state, and the wall: a lock cannot trigger on another object's state |
+| `/explorer` | Explorer | Every transaction the demo produced, newest first, refusals included and labelled as deliberate |
+| `/findings` | Findings | The three headline findings as cards, each with repro command, hashes and proposed fix |
+
+**Two data sources, no third.** `public/state.json` — mirrored from `state/hackathon.json` by
+`saveState()` on every write, so Vite serves it at `/state.json` — carries the object IDs, the role
+addresses, the last gate matrix and the transaction log. Everything else is a live RPC query or the
+`ledger` subscription against `NETWORK.wss`. If a page needs a fact in neither, the fix is to write
+it into the state file from the protocol scripts, not to add a server.
+
+**It is read-only on purpose, and that is worth saying on stage:** the browser holds no key,
+`LoanSet` needs two signatures, and a visitor's wallet holds no `Credential` — so a deposit from it
+would land `tecNO_AUTH`, the gate working correctly but indistinguishable from a broken app. The
+`xrpl-connect` widget on Home shows a connected account and nothing else.
+
+**Amounts.** `src/ui/lib/format.ts` is the only place base units become euros, as string
+arithmetic at the render edge (TFEUR is `AssetScale: 2`, so `AssetsTotal: "3500000"` is
+€35,000.00). Anything derived from two ledger amounts is BigInt. No float touches a ledger value.
+
+**Typings.** The UI reads the ledger through xrpl.js's own models — `import { LedgerEntry } from
+'xrpl'`, then `LedgerEntry.Loan`, `LedgerEntry.LoanFlags`, the typed `vault_info` request — and
+narrows on `LedgerEntryType` rather than casting. One cast survives, for `MPToken`, which is
+missing from the `LedgerEntry` union (`FEEDBACK_REPORT.md` §9).
 
 ## Demo cue sheet
 

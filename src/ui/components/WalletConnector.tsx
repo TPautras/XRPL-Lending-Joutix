@@ -3,7 +3,14 @@ import type { WalletConnectorElement } from 'xrpl-connect'
 import { useWallet } from '../wallet/WalletContext'
 import { enabledWalletIds } from '../wallet/config'
 
+/**
+ * `display: none` hides the element's own connect button, which would otherwise sit
+ * unstyled next to ours — two buttons doing the same thing. The element stays mounted and
+ * keeps working: its modal is portalled onto `document.body` (`ensureOverlayPortal`), not
+ * rendered inside the host, so `open()` still shows it.
+ */
 const CONNECTOR_THEME = {
+  display: 'none',
   '--xc-background-color': '#12161f',
   '--xc-text-color': '#e7ecf5',
   '--xc-primary-color': '#4f8cff',

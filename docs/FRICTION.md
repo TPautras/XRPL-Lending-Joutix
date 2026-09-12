@@ -81,3 +81,16 @@ observations themselves are never edited — only evidence is added.
 ## 2026-09-12T17:08:08.894Z — report.verify loan B
 - expected: a defaulted loan has PaymentRemaining 0
 - got: PaymentRemaining = undefined
+
+## 2026-09-12T19:20:00.000Z — xrpl.js 5.2.0, `MPToken` is missing from the `account_objects` response type
+
+- expected: `client.request({ command: 'account_objects', account, type: 'mptoken' })` to return objects the response type can describe — `type: 'mptoken'` is one of `LedgerEntryFilter`'s documented values and `MPToken` is an exported model (`LedgerEntry.MPToken`).
+- got: a TypeScript error on every field access. `AccountObject` is `Exclude<LedgerEntry, Amendments | FeeSettings | LedgerHashes>` and the `LedgerEntry` union itself does not contain `MPToken` (it has `MPTokenIssuance`), so narrowing on `object.LedgerEntryType === 'MPToken'` narrows to `never` and `MPTAmount`/`MPTokenIssuanceID` "do not exist". `tsc` even reports the comparison as having no overlap — a correct diagnosis of the union, and a misleading one about the API, since the request really does return `MPToken` objects.
+- repro: any typed call reading an MPT balance, e.g. `src/ui/pages/GatePage.tsx mptBalance()` — build with `npm run typecheck`.
+- note: worked around with one cast at the boundary (`result.account_objects as unknown as LedgerEntry.MPToken[]`), deliberately the only cast of its kind left in `src/ui`. Fix is one entry in the `LedgerEntry` union. Worth flagging because the same lookup is how any MPT-denominated app reads a balance, and the error message points at the narrowing rather than at the missing union member.
+
+## 2026-09-12T19:26:00.000Z — xrpl.js 5.2.0 types all of XLS-65/66 (correcting our own assumption), but only through a namespace
+
+- expected (our assumption while writing `src/protocol`): xrpl.js 5.2.0 would have no types for these draft amendments, so every call was written as `client.request({ ... } as never)` and every result read as `Record<string, unknown>`.
+- got: it types essentially all of it. `vault_info` is in the `Request`/`Response` unions with a fully described `VaultInfoResponse` (including `vault.shares.AssetScale`), `ledger_entry`'s `result.node` is the `LedgerEntry` union, and `Loan`, `LoanBroker`, `Vault`, `Credential`, `Escrow`, `LoanFlags` and `VaultFlags` are all shipped models. The webapp's ledger reads (`src/ui/dashboard/useDashboard.ts`, `lib/protection.ts`, `pages/GatePage.tsx`) are now written with zero casts except the `MPToken` one above, narrowing on `LedgerEntryType` instead.
+- note: the discoverability gap is how they are exported. `models/index.d.ts` does `export * as LedgerEntry from './ledger'`, so the models are reachable only as `import { LedgerEntry } from 'xrpl'` and then `LedgerEntry.Loan` / `LedgerEntry.LoanFlags.lsfLoanDefault` — while the name `LedgerEntry` is *also* the union type inside that namespace. `import { Loan } from 'xrpl'` fails with "Did you mean 'LoanSetFlags'?", which reads as "no such type" rather than "it is one level down". A line in the XLS-65/66 integration docs showing the namespace import would have saved us writing an entire protocol layer against `Record<string, unknown>`, and the flag enums in particular are worth advertising — we had hand-copied `0x00010000` constants for loan and credential flags that the library already exports.

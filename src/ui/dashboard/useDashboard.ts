@@ -1,28 +1,23 @@
-import { useEffect, useState } from 'react'
-import { Client } from 'xrpl'
-import { NETWORK } from '../wallet/config'
-
-/** Mirrors src/protocol/lib/state.ts's HackathonState — written to public/state.json
- * by the protocol scripts, polled here since it may not exist yet when this app
- * starts and Vite can't statically import a file that doesn't exist at build time. */
-interface HackathonState {
-  mptIssuanceId?: string
-  vault?: { vaultId: string; shareMptId: string; private: boolean }
-  loanBrokerId?: string
-  loans: { A?: { loanId: string }; B?: { loanId: string } }
-  insurance?: { released?: boolean; cancelled?: boolean }
-}
+import { LedgerEntry, type Client } from 'xrpl'
+import type { AppState } from '../lib/appState'
+import { useLedgerQuery, type LedgerQuery } from '../lib/ledger'
+import { TFEUR_SCALE } from '../lib/format'
 
 export interface VaultView {
-  assetsTotal: number
-  assetsAvailable: number
-  lossUnrealized: number
-  outstandingShares: number
-  sharePrice: number
+  /** Amounts stay exactly as the ledger sent them — integer strings in the funding asset's
+   * base units. The only division by 10^scale happens at render (see lib/format.ts). */
+  assetsTotal: string
+  assetsAvailable: string
+  lossUnrealized: string
+  outstandingShares: string
+  assetScale: number
+  shareScale: number
+  private: boolean
 }
 
 export interface BrokerView {
   debtTotal: string
+  debtMaximum: string
   coverAvailable: string
   coverRateMinimum: number
 }
@@ -32,172 +27,105 @@ export interface LoanView {
   status: 'active' | 'impaired' | 'defaulted'
   principalOutstanding: string
   totalValueOutstanding: string
+  periodicPayment: string
   paymentRemaining: number
   nextPaymentDueDate: number
+  gracePeriod: number
 }
 
-export interface DashboardView {
-  connected: boolean
-  ledgerIndex: number | null
-  hasState: boolean
+export interface DashboardData {
   vault: VaultView | null
   broker: BrokerView | null
   loans: Record<'A' | 'B', LoanView | null>
-  insurance: { released: boolean; cancelled: boolean } | null
-  events: string[]
 }
 
-const LOAN_DEFAULT_FLAG = 0x00010000
-const LOAN_IMPAIRED_FLAG = 0x00020000
-
-const EMPTY_VIEW: DashboardView = {
-  connected: false,
-  ledgerIndex: null,
-  hasState: false,
-  vault: null,
-  broker: null,
-  loans: { A: null, B: null },
-  insurance: null,
-  events: [],
+/**
+ * xrpl.js 5.2.0 types all of this: `vault_info` is in the request union and `Loan`,
+ * `LoanBroker`, `Vault`, `LoanFlags` and `VaultFlags` are exported ledger models. So every
+ * read here is narrowed on `LedgerEntryType` rather than cast — the compiler, not a comment,
+ * is what guarantees `DebtTotal` is being read off a `LoanBroker`.
+ */
+async function readVault(client: Client, vaultId: string): Promise<VaultView> {
+  const { result } = await client.request({ command: 'vault_info', vault_id: vaultId })
+  const vault = result.vault
+  return {
+    assetsTotal: String(vault.AssetsTotal ?? '0'),
+    assetsAvailable: String(vault.AssetsAvailable ?? '0'),
+    lossUnrealized: String(vault.LossUnrealized ?? '0'),
+    outstandingShares: String(vault.shares.OutstandingAmount ?? '0'),
+    // The reserve is denominated in TFEUR by construction (`VaultCreate` was given that
+    // MPT as its `Asset`), so its scale is the stablecoin's.
+    assetScale: TFEUR_SCALE,
+    // The share MPT is created by `VaultCreate` and carries its own `AssetScale`; reading
+    // it rather than assuming the two match keeps the share price honest either way.
+    shareScale: Number(vault.shares.AssetScale ?? TFEUR_SCALE),
+    // Read off the ledger rather than from state.json: whether the vault is domain-gated
+    // is a fact about the object, not about what we meant to create.
+    private: (vault.Flags & LedgerEntry.VaultFlags.lsfVaultPrivate) !== 0,
+  }
 }
 
-function pushEvent(events: string[], line: string): string[] {
-  return [line, ...events].slice(0, 20)
+async function readNode(client: Client, index: string) {
+  const { result } = await client.request({ command: 'ledger_entry', index, ledger_index: 'validated' })
+  return result.node
 }
 
-/** Read-only view of the whole TrustFlow demo, driven purely by RPC queries against
- * the hackathon devnet plus the object IDs the protocol scripts wrote to
- * public/state.json. Never signs or submits anything. */
-export function useDashboard(): DashboardView {
-  const [view, setView] = useState<DashboardView>(EMPTY_VIEW)
+async function readBroker(client: Client, brokerId: string): Promise<BrokerView> {
+  const node = await readNode(client, brokerId)
+  if (node.LedgerEntryType !== 'LoanBroker') throw new Error(`${brokerId} is a ${node.LedgerEntryType}`)
+  const broker: LedgerEntry.LoanBroker = node
+  return {
+    debtTotal: String(broker.DebtTotal ?? '0'),
+    debtMaximum: String(broker.DebtMaximum ?? '0'),
+    coverAvailable: String(broker.CoverAvailable ?? '0'),
+    coverRateMinimum: Number(broker.CoverRateMinimum ?? 0),
+  }
+}
 
-  useEffect(() => {
-    let cancelled = false
-    let pollTimer: ReturnType<typeof setTimeout> | undefined
-    let stateJson: HackathonState | null = null
-    const client = new Client(NETWORK.wss)
+async function readLoan(client: Client, loanId: string): Promise<LoanView> {
+  const node = await readNode(client, loanId)
+  if (node.LedgerEntryType !== 'Loan') throw new Error(`${loanId} is a ${node.LedgerEntryType}`)
+  const loan: LedgerEntry.Loan = node
+  return {
+    loanId,
+    status:
+      loan.Flags & LedgerEntry.LoanFlags.lsfLoanDefault
+        ? 'defaulted'
+        : loan.Flags & LedgerEntry.LoanFlags.lsfLoanImpaired
+          ? 'impaired'
+          : 'active',
+    principalOutstanding: String(loan.PrincipalOutstanding ?? '0'),
+    totalValueOutstanding: String(loan.TotalValueOutstanding ?? '0'),
+    periodicPayment: String(loan.PeriodicPayment ?? '0'),
+    paymentRemaining: Number(loan.PaymentRemaining ?? 0),
+    nextPaymentDueDate: Number(loan.NextPaymentDueDate ?? 0),
+    gracePeriod: Number(loan.GracePeriod ?? 0),
+  }
+}
 
-    async function refresh() {
-      if (cancelled || !stateJson) return
-      const s = stateJson
+/**
+ * The whole reserve, re-read on every ledger close. Each object is fetched independently and
+ * a failure is swallowed per object on purpose: during the demo the broker exists before the
+ * loans do, and one missing object must not take the rest of the screen with it.
+ */
+export function useDashboard(state: AppState | null): LedgerQuery<DashboardData> {
+  const vaultId = state?.vault?.vaultId
+  const brokerId = state?.loanBrokerId
+  const loanA = state?.loans?.A?.loanId
+  const loanB = state?.loans?.B?.loanId
 
-      let vault: VaultView | null = null
-      if (s.vault) {
-        try {
-          const { result } = await client.request({ command: 'vault_info', vault_id: s.vault.vaultId } as never)
-          const v = (result as { vault: Record<string, unknown> }).vault
-          const assetsTotal = Number(v.AssetsTotal ?? 0)
-          const shares = Number((v.shares as { OutstandingAmount?: string } | undefined)?.OutstandingAmount ?? 0)
-          vault = {
-            assetsTotal,
-            assetsAvailable: Number(v.AssetsAvailable ?? 0),
-            lossUnrealized: Number(v.LossUnrealized ?? 0),
-            outstandingShares: shares,
-            sharePrice: shares > 0 ? assetsTotal / shares : 0,
-          }
-        } catch {
-          // vault not created yet, or a transient RPC hiccup — next poll will retry
-        }
-      }
-
-      let broker: BrokerView | null = null
-      if (s.loanBrokerId) {
-        try {
-          const { result } = await client.request({
-            command: 'ledger_entry',
-            index: s.loanBrokerId,
-            ledger_index: 'validated',
-          } as never)
-          const node = (result as { node: Record<string, unknown> }).node
-          broker = {
-            debtTotal: String(node.DebtTotal ?? '0'),
-            coverAvailable: String(node.CoverAvailable ?? '0'),
-            coverRateMinimum: Number(node.CoverRateMinimum ?? 0),
-          }
-        } catch {
-          // broker not created yet
-        }
-      }
-
-      const loans: DashboardView['loans'] = { A: null, B: null }
-      for (const slot of ['A', 'B'] as const) {
-        const loan = s.loans[slot]
-        if (!loan) continue
-        try {
-          const { result } = await client.request({
-            command: 'ledger_entry',
-            index: loan.loanId,
-            ledger_index: 'validated',
-          } as never)
-          const node = (result as { node: Record<string, unknown> }).node
-          const flags = Number(node.Flags ?? 0)
-          loans[slot] = {
-            loanId: loan.loanId,
-            status: flags & LOAN_DEFAULT_FLAG ? 'defaulted' : flags & LOAN_IMPAIRED_FLAG ? 'impaired' : 'active',
-            principalOutstanding: String(node.PrincipalOutstanding ?? '0'),
-            totalValueOutstanding: String(node.TotalValueOutstanding ?? '0'),
-            paymentRemaining: Number(node.PaymentRemaining ?? 0),
-            nextPaymentDueDate: Number(node.NextPaymentDueDate ?? 0),
-          }
-        } catch {
-          // loan not created yet
-        }
-      }
-
-      if (!cancelled) {
-        setView((prev) => ({
-          ...prev,
-          hasState: true,
-          vault,
-          broker,
-          loans,
-          insurance: s.insurance
-            ? { released: Boolean(s.insurance.released), cancelled: Boolean(s.insurance.cancelled) }
-            : null,
-        }))
-      }
-    }
-
-    async function pollState() {
-      try {
-        const res = await fetch('/state.json', { cache: 'no-store' })
-        if (res.ok) {
-          stateJson = (await res.json()) as HackathonState
-          await refresh()
-        }
-      } catch {
-        // public/state.json doesn't exist until `npm run demo setup` has run once
-      }
-      if (!cancelled) pollTimer = setTimeout(pollState, 5000)
-    }
-
-    async function connect() {
-      try {
-        await client.connect()
-        if (cancelled) return
-        setView((prev) => ({ ...prev, connected: true, events: pushEvent(prev.events, 'Connected to hackathon devnet') }))
-        await client.request({ command: 'subscribe', streams: ['ledger'] } as never)
-        client.on('ledgerClosed', (ledger: unknown) => {
-          const index = Number((ledger as { ledger_index?: number }).ledger_index ?? 0)
-          setView((prev) => ({ ...prev, ledgerIndex: index, events: pushEvent(prev.events, `Ledger ${index} closed`) }))
-          void refresh()
-        })
-      } catch (err) {
-        if (!cancelled) {
-          setView((prev) => ({ ...prev, events: pushEvent(prev.events, `Connection error: ${String(err)}`) }))
-        }
-      }
-    }
-
-    void connect()
-    void pollState()
-
-    return () => {
-      cancelled = true
-      if (pollTimer) clearTimeout(pollTimer)
-      void client.disconnect()
-    }
-  }, [])
-
-  return view
+  return useLedgerQuery<DashboardData>(
+    !state
+      ? null
+      : async (client) => {
+          const [vault, broker, a, b] = await Promise.all([
+            vaultId ? readVault(client, vaultId).catch(() => null) : null,
+            brokerId ? readBroker(client, brokerId).catch(() => null) : null,
+            loanA ? readLoan(client, loanA).catch(() => null) : null,
+            loanB ? readLoan(client, loanB).catch(() => null) : null,
+          ])
+          return { vault, broker, loans: { A: a, B: b } }
+        },
+    [vaultId, brokerId, loanA, loanB],
+  )
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useWallet } from '../wallet/WalletContext'
-import { NETWORK } from '../wallet/config'
+import { NETWORK } from '../lib/network'
 
 function explorerUrl(address: string): string {
   return `${NETWORK.explorer}/accounts/${address}`

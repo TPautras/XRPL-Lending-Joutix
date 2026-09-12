@@ -29,6 +29,17 @@ export interface EscrowState {
   cancelled?: boolean
 }
 
+/** One row of the Phase 2 access matrix. Structurally identical to
+ * `flows/gate.ts`'s `GateObservation` — repeated here rather than imported so this
+ * module keeps depending on nothing (flows import state, never the other way). */
+export interface GateObservationRecord {
+  state: string
+  action: string
+  result: string
+  hash: string
+  note?: string
+}
+
 export interface HackathonState {
   mptIssuanceId?: string
   credentialType?: string
@@ -37,6 +48,15 @@ export interface HackathonState {
   loanBrokerId?: string
   loans: { A?: LoanState; B?: LoanState }
   insurance?: EscrowState
+  /** role name -> classic address. Written by `demo.ts` on every run so the webapp's
+   * Gate page can read each participant's credential state straight off the ledger:
+   * the browser has no access to `.env`, and CLAUDE.md's rule for a fact the UI needs
+   * is to write it into the state file rather than stand up a backend. */
+  accounts?: Record<string, string>
+  /** What the ledger answered in the last `npm run demo gate` run (the four-state
+   * credential walk plus the borrow-side probe), so the Gate page renders real hashes
+   * instead of a table retyped by hand. */
+  gate?: { ts: string; observations: GateObservationRecord[] }
   txLog: Array<{ ts: string; type: string; result: string; hash: string }>
 }
 
@@ -79,5 +99,23 @@ export function resetState(): void {
 export function appendTxLog(entry: { ts: string; type: string; result: string; hash: string }): void {
   const state = loadState()
   state.txLog.push(entry)
+  writeState(state)
+}
+
+/** Records each role's address (idempotent: a no-op write is skipped so re-running a
+ * step does not churn the file the dashboard polls). Roles whose `.env` seed is blank
+ * get a random wallet from `loadWallets()`, so an address here is only as real as the
+ * seed behind it — `npm run probe` is what makes them funded and stable. */
+export function recordAccounts(accounts: Record<string, string>): void {
+  const state = loadState()
+  const merged = { ...state.accounts, ...accounts }
+  if (state.accounts && JSON.stringify(merged) === JSON.stringify(state.accounts)) return
+  state.accounts = merged
+  writeState(state)
+}
+
+export function recordGate(observations: GateObservationRecord[]): void {
+  const state = loadState()
+  state.gate = { ts: new Date().toISOString(), observations }
   writeState(state)
 }
