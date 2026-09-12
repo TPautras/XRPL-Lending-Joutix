@@ -10,3 +10,5 @@ xrpl-devex-hook/
 .env.*
 !.env.example
 dist/
+state/
+public/state.json

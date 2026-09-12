@@ -37,7 +37,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     () =>
       new WalletManager({
         adapters: buildAdapters(),
-        network: NETWORK.id,
+        network: NETWORK, // a custom NetworkInfo, not one of xrpl-connect's presets — see config.ts
         autoConnect: true,
         logger: { level: 'info' },
       }),

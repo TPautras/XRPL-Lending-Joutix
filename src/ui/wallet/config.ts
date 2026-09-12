@@ -1,19 +1,21 @@
-import {
-  CrossmarkAdapter,
-  GemWalletAdapter,
-  WalletConnectAdapter,
-  XamanAdapter,
-  STANDARD_NETWORKS,
-} from 'xrpl-connect'
+import { CrossmarkAdapter, GemWalletAdapter, WalletConnectAdapter, XamanAdapter } from 'xrpl-connect'
 
 /**
- * Devnet is where the vault/lending amendments live (see CLAUDE.md → Environment).
- * `STANDARD_NETWORKS.devnet.wss` is `wss://s.devnet.rippletest.net:51233/`, i.e. the
- * endpoint the protocol scripts use, so the UI and the scripts cannot drift apart.
- * Its `walletConnectId` is `xrpl:2`, which is the CAIP-2 chain the XRPL Dev Wallet
- * extension advertises its accounts under (`xrpl:2:rXXXX`).
+ * TrustFlow (Track 1) runs on the Custom Hackathon Devnet, not `xrpl-connect`'s
+ * `STANDARD_NETWORKS.devnet` (public Devnet) — the two do not share ledger state, so a
+ * wallet pointed at the wrong one would sign against an empty ledger. There is no
+ * standard CAIP-2 id for this network; `walletConnectId` is left undefined, which
+ * means the XRPL Dev Wallet extension (WalletConnect-only) cannot target it — that
+ * extension only advertises the three standard chains. Crossmark/GemWallet can still
+ * add a custom network manually and connect.
  */
-export const NETWORK = STANDARD_NETWORKS.devnet
+export const NETWORK = {
+  id: 'hackathon-devnet',
+  name: 'Lending Hackathon Devnet',
+  wss: 'wss://lending-hackathon.dev.ripplex.io:51233',
+  rpc: 'https://lending-hackathon.dev.ripplex.io:51234',
+  explorer: 'https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233',
+}
 
 const XAMAN_API_KEY = import.meta.env.VITE_XAMAN_API_KEY
 const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID

@@ -3,7 +3,7 @@ import { useWallet } from '../wallet/WalletContext'
 import { NETWORK } from '../wallet/config'
 
 function explorerUrl(address: string): string {
-  return `https://devnet.xrpl.org/accounts/${address}`
+  return `${NETWORK.explorer}/accounts/${address}`
 }
 
 export function AccountPanel() {
