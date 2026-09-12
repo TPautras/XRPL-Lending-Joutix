@@ -49,6 +49,38 @@ export function eur(raw: string | number | null | undefined, scale = TFEUR_SCALE
   return formatted.startsWith('-') ? `-€${formatted.slice(1)}` : `€${formatted}`
 }
 
+/** Drops → `12.500000 XRP`. XRP is six decimals; same string arithmetic as everything
+ * else here, so a balance shown on screen and a balance sent to the ledger cannot drift. */
+export function xrp(drops: string | number | null | undefined, decimals = 6): string {
+  const formatted = baseToDecimal(drops, 6, decimals)
+  return formatted === null ? '—' : `${formatted} XRP`
+}
+
+/**
+ * `"12.5"` → `"12500000"` drops, as digits rather than arithmetic — the inverse of the
+ * rule above, for the one screen that builds a transaction from something a person typed.
+ * Returns null for anything that is not a plain decimal with at most six places, so a
+ * malformed amount is refused before it reaches a wallet popup rather than rounded into
+ * one.
+ */
+export function xrpToDropsString(input: string): string | null {
+  const text = input.trim()
+  if (!/^\d+(?:\.\d{1,6})?$/.test(text)) return null
+  const [whole, frac = ''] = text.split('.')
+  const drops = `${whole}${frac.padEnd(6, '0')}`.replace(/^0+(?=\d)/, '')
+  return drops === '0' ? null : drops
+}
+
+/** UTF-8 → uppercase hex, for ledger fields that carry text (a `Memo`'s type and data).
+ * `Buffer` is a Node global and this bundle runs in a browser, so the encoding is done
+ * with `TextEncoder` rather than assuming a polyfill that is not there. */
+export function textToHex(text: string): string {
+  return [...new TextEncoder().encode(text)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+    .toUpperCase()
+}
+
 /** A count of base units with no currency symbol (vault shares, premium counts). */
 export function units(raw: string | number | null | undefined, scale = TFEUR_SCALE): string {
   return baseToDecimal(raw, scale) ?? '—'

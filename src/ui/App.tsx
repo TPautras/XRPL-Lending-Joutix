@@ -7,6 +7,7 @@ import { FindingsPage } from './pages/FindingsPage'
 import { GatePage } from './pages/GatePage'
 import { Home } from './pages/Home'
 import { InsurancePage } from './pages/InsurancePage'
+import { MarketPage } from './pages/MarketPage'
 import { useRoute, type Route } from './lib/router'
 import { useWallet } from './wallet/WalletContext'
 import { NETWORK } from './lib/network'
@@ -16,6 +17,7 @@ const PAGES: Record<Route, () => ReactElement> = {
   '/dashboard': Dashboard,
   '/gate': GatePage,
   '/insurance': InsurancePage,
+  '/market': MarketPage,
   '/explorer': ExplorerPage,
   '/findings': FindingsPage,
 }
@@ -58,8 +60,17 @@ export function App() {
 
       <footer className="footer muted">
         <span>
-          Read-only by construction — every transaction is signed by <code>src/protocol/</code>,
-          never by this page.
+          {route === '/market' ? (
+            <>
+              The one screen that signs: a policy here is submitted by your own wallet, over your
+              own XRP. Every other page is read-only — signed by <code>src/protocol/</code>.
+            </>
+          ) : (
+            <>
+              Read-only by construction — every transaction is signed by <code>src/protocol/</code>,
+              never by this page.
+            </>
+          )}
         </span>
         <code>{NETWORK.wss}</code>
       </footer>

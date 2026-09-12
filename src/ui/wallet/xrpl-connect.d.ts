@@ -48,6 +48,21 @@ declare module 'xrpl-connect' {
     logger?: { level?: 'debug' | 'info' | 'warn' | 'error' | 'silent' }
   }
 
+  /** `sign()`'s result. Which half is populated depends on the adapter: Crossmark and
+   * GemWallet return a `tx_blob` ready to submit, others only a raw `signature`. */
+  export interface SignedTransaction {
+    tx_blob?: string
+    hash?: string
+    signature?: string
+  }
+
+  /** `signAndSubmit()`'s result — the wallet submitted it to its own network, so all we
+   * get back is an identifier to look the outcome up with. */
+  export interface SubmittedTransaction {
+    hash?: string
+    id?: string
+  }
+
   export class WalletManager {
     constructor(options: WalletManagerOptions)
     readonly connected: boolean
@@ -55,7 +70,8 @@ declare module 'xrpl-connect' {
     readonly wallet: WalletInfo | null
     connect(walletId: string, options?: Record<string, unknown>): Promise<AccountInfo>
     disconnect(): Promise<void>
-    sign(tx: Record<string, unknown>): Promise<unknown>
+    sign(tx: Record<string, unknown>): Promise<SignedTransaction>
+    signAndSubmit(tx: Record<string, unknown>): Promise<SubmittedTransaction>
     on<K extends keyof WalletManagerEvents>(event: K, handler: WalletManagerEvents[K]): void
     off<K extends keyof WalletManagerEvents>(event: K, handler: WalletManagerEvents[K]): void
   }
