@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.protocol.json",
     "probe": "tsx src/protocol/probe.ts",
     "demo": "tsx src/protocol/demo.ts",
-    "smoke": "vite build --config scripts/smoke.vite.config.ts && node scripts/smoke.mjs"
+    "smoke": "vite build --config scripts/smoke.vite.config.ts && node scripts/smoke.mjs",
+    "smoke:live": "vite build --config scripts/smoke.vite.config.ts && LIVE=1 ROUTES=/dashboard node scripts/smoke.mjs"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
