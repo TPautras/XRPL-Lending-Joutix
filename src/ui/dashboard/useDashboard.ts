@@ -24,7 +24,7 @@ export interface BrokerView {
 
 export interface LoanView {
   loanId: string
-  status: 'active' | 'impaired' | 'defaulted'
+  status: 'active' | 'repaid' | 'impaired' | 'defaulted'
   principalOutstanding: string
   totalValueOutstanding: string
   periodicPayment: string
@@ -82,10 +82,20 @@ async function readBroker(client: Client, brokerId: string): Promise<BrokerView>
   }
 }
 
+/**
+ * A `Loan` omits every field sitting at its zero value, so a fully repaid loan comes back
+ * with no `PrincipalOutstanding`, no `TotalValueOutstanding`, no `PaymentRemaining` and no
+ * `NextPaymentDueDate` — only `PreviousPaymentDueDate` survives. There is no flag for
+ * "repaid" either: `Flags` is plainly `0`, the same as a loan that has not been touched.
+ * So the absence *is* the signal, and reading it as `active` puts "Active · 0 payment(s)
+ * left · Outstanding €0.00" on screen, three statements that contradict each other.
+ */
 async function readLoan(client: Client, loanId: string): Promise<LoanView> {
   const node = await readNode(client, loanId)
   if (node.LedgerEntryType !== 'Loan') throw new Error(`${loanId} is a ${node.LedgerEntryType}`)
   const loan: LedgerEntry.Loan = node
+  const paymentRemaining = Number(loan.PaymentRemaining ?? 0)
+  const principalOutstanding = String(loan.PrincipalOutstanding ?? '0')
   return {
     loanId,
     status:
@@ -93,11 +103,13 @@ async function readLoan(client: Client, loanId: string): Promise<LoanView> {
         ? 'defaulted'
         : loan.Flags & LedgerEntry.LoanFlags.lsfLoanImpaired
           ? 'impaired'
-          : 'active',
-    principalOutstanding: String(loan.PrincipalOutstanding ?? '0'),
+          : paymentRemaining === 0 && principalOutstanding === '0'
+            ? 'repaid'
+            : 'active',
+    principalOutstanding,
     totalValueOutstanding: String(loan.TotalValueOutstanding ?? '0'),
     periodicPayment: String(loan.PeriodicPayment ?? '0'),
-    paymentRemaining: Number(loan.PaymentRemaining ?? 0),
+    paymentRemaining,
     nextPaymentDueDate: Number(loan.NextPaymentDueDate ?? 0),
     gracePeriod: Number(loan.GracePeriod ?? 0),
   }

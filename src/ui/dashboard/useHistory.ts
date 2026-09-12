@@ -34,15 +34,6 @@ function publish() {
   for (const listener of listeners) listener(snapshot)
 }
 
-function sameShape(a: Sample, b: Sample): boolean {
-  return (
-    a.sharePrice === b.sharePrice &&
-    a.lossUnrealized === b.lossUnrealized &&
-    a.cover === b.cover &&
-    a.coverRequired === b.coverRequired
-  )
-}
-
 export function recordSample(data: DashboardData | null | undefined) {
   if (!data) return
   const { vault, broker } = data
@@ -59,16 +50,14 @@ export function recordSample(data: DashboardData | null | undefined) {
     coverRequired: broker ? baseToNumber(minimumCover(broker.debtTotal, broker.coverRateMinimum)) : null,
   }
 
-  const last = samples[samples.length - 1]
-  // A ledger closes every ~4s whether or not the demo did anything. Recording an identical
-  // sample each time would flatten the interesting moments into a long straight line, so an
-  // unchanged reading only extends the series when it is the most recent point.
-  if (last && sameShape(last, next)) {
-    samples[samples.length - 1] = next
-  } else {
-    samples.push(next)
-    if (samples.length > MAX_SAMPLES) samples.shift()
-  }
+  // Every close gets its own point, including the ones where nothing moved. An earlier
+  // version collapsed unchanged readings into the last sample to avoid a long flat line —
+  // which meant a reserve that was simply sitting still never accumulated a second point,
+  // so the charts stayed on their "waiting" placeholder indefinitely and the default had
+  // no baseline to drop away from. The flat line is the point: it is what makes the `s9`
+  // move legible.
+  samples.push(next)
+  while (samples.length > MAX_SAMPLES) samples.shift()
   publish()
 }
 
