@@ -29,6 +29,28 @@ export interface EscrowState {
   cancelled?: boolean
 }
 
+/**
+ * One published crypto-condition the open protection market writes policies against.
+ *
+ * Anyone can create an `EscrowCreate` bearing `condition`; every escrow that carries it
+ * is released by the same `fulfillment`, so revealing it settles every policy written on
+ * that loan at once. That is the intended semantics — one default, all policies pay —
+ * and it is also the whole trust assumption: see `publicView()` for why the fulfillment
+ * is not in the file the browser reads until the referee has actually revealed it.
+ */
+export interface MarketCondition {
+  /** Which loan in `loans` a payout refers to. */
+  loan: string
+  condition: string
+  /** The secret. Withheld from `public/state.json` until `revealed`. */
+  fulfillment: string
+  /** Set once the referee has recorded a real default on `loan` and published the
+   * fulfillment. From that moment any holder of a matching escrow can claim it. */
+  revealed?: boolean
+  revealedAt?: string
+  createdAt: string
+}
+
 /** One row of the Phase 2 access matrix. Structurally identical to
  * `flows/gate.ts`'s `GateObservation` — repeated here rather than imported so this
  * module keeps depending on nothing (flows import state, never the other way). */
@@ -48,6 +70,9 @@ export interface HackathonState {
   loanBrokerId?: string
   loans: { A?: LoanState; B?: LoanState }
   insurance?: EscrowState
+  /** The open protection market (`npm run demo referee`): the referee's address and the
+   * conditions anyone may write a policy against. */
+  market?: { referee: string; conditions: MarketCondition[] }
   /** role name -> classic address. Written by `demo.ts` on every run so the webapp's
    * Gate page can read each participant's credential state straight off the ledger:
    * the browser has no access to `.env`, and CLAUDE.md's rule for a fact the UI needs
@@ -84,13 +109,39 @@ export function saveState(state: HackathonState): void {
   writeState({ ...state, txLog: mergedLog })
 }
 
+/**
+ * What the browser is allowed to see. `public/state.json` is served to anyone who opens
+ * the site, so every crypto-condition fulfillment is stripped out of it until the moment
+ * it is deliberately revealed: a fulfillment is the secret that releases an escrow, and
+ * publishing it early would let anyone finish a policy before the loan it insures has
+ * defaulted — including policies written by visitors with their own money.
+ *
+ * The demo's own `insurance` escrow keeps its fulfillment until `released`, by which
+ * point it is on-ledger in the `EscrowFinish` anyway and is evidence rather than a secret.
+ */
+function publicView(state: HackathonState): HackathonState {
+  const insurance = state.insurance
+  const market = state.market
+  return {
+    ...state,
+    insurance: insurance && !insurance.released ? { ...insurance, fulfillment: '' } : insurance,
+    market: market && {
+      ...market,
+      conditions: market.conditions.map((entry) =>
+        entry.revealed ? entry : { ...entry, fulfillment: '' },
+      ),
+    },
+  }
+}
+
 function writeState(state: HackathonState): void {
   mkdirSync(dirname(STATE_PATH), { recursive: true })
   writeFileSync(STATE_PATH, JSON.stringify(state, null, 2))
   // Mirrored into src/ui so the dashboard (served by Vite, browser-side) can read
   // the object IDs without a backend — see CLAUDE.md's "no wallet signing" dashboard.
+  // Redacted on the way out: the mirror is public, the state file is not.
   mkdirSync(dirname(DASHBOARD_COPY_PATH), { recursive: true })
-  writeFileSync(DASHBOARD_COPY_PATH, JSON.stringify(state, null, 2))
+  writeFileSync(DASHBOARD_COPY_PATH, JSON.stringify(publicView(state), null, 2))
 }
 
 export function resetState(): void {

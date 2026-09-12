@@ -393,3 +393,54 @@ h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: 
   .hero h1 { font-size: 25px; }
   .metric-value { font-size: 22px; }
 }
+
+/* ── Forms — only the protection market has any, and it is the only screen that submits.
+   Kept to the same tokens as every panel so a screen that spends real XRP does not look
+   like a different app than the ones that only read. ─────────────────────────────────── */
+.form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  margin: 4px 0 14px;
+}
+
+.form-field { display: flex; flex-direction: column; gap: 6px; }
+.form-field > span { font-size: 12.5px; color: var(--muted); }
+.form-field-inline { max-width: 260px; margin-top: 14px; }
+
+.form input,
+.form select,
+.form-field input,
+.form-field select,
+.inline-form input {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  padding: 9px 11px;
+  min-width: 0;
+}
+
+.form input:focus,
+.form select:focus,
+.form-field input:focus,
+.inline-form input:focus {
+  border-color: var(--border-strong);
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 1px;
+}
+
+.form input::placeholder,
+.inline-form input::placeholder { color: #5c6679; }
+
+.form-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+.inline-form { display: flex; gap: 8px; align-items: center; }
+.inline-form input { font-size: 13px; padding: 6px 10px; width: 210px; }
+
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.steps { margin: 4px 0 10px; padding-left: 20px; display: grid; gap: 8px; font-size: 14.5px; }
+.steps strong { color: var(--text); }

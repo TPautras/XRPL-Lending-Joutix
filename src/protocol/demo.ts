@@ -7,6 +7,9 @@
  *             records what the ledger answers, including the uncredentialed-borrower probe
  *   oracle    optional: manager publishes an XLS-47 Price Oracle valuing the financed
  *             receivable (see flows/oracle.ts) -- informational, not consulted by LoanSet
+ *   referee   publishes the open protection market's conditions and reveals the fulfillment
+ *             for any loan the ledger says has defaulted. Idempotent — safe to re-run or
+ *             loop while the market is open (see src/ui/pages/MarketPage.tsx)
  *   prestage  run ~5 min before going on stage: cover, loan B (the one that will default),
  *             sell protection on it. Prints when it becomes defaultable.
  *   s1..s10   the on-stage steps, matching CLAUDE.md's numbered demo script
@@ -29,6 +32,7 @@ import { sellProtection, payPremium, payoutProtection } from './flows/insurance.
 import { overWithdraw, intruderDeposit, revokedStillWithdraws } from './flows/rejections.js'
 import { proveGate } from './flows/gate.js'
 import { publishReceivablePrice } from './flows/oracle.js'
+import { publishConditions, revealDefaulted, describeMarket } from './flows/market.js'
 import { verify } from './flows/report.js'
 
 const LOAN_A: LoanTerms = { principal: 2000, interestRate: 100000, paymentTotal: 1, paymentInterval: 60, gracePeriod: 60 }
@@ -155,6 +159,9 @@ async function cmdStep(step: string) {
       await impair(client, w.manager, loanB)
       await defaultLoan(client, w.manager, loanB)
       await payoutProtection(client, w.manager)
+      // The demo's own policy is settled above; every policy strangers wrote against the
+      // same loan in the open market settles by the referee publishing the fulfillment.
+      await revealDefaulted(client)
       break
     }
 
@@ -201,7 +208,7 @@ async function cmdFull() {
 async function main() {
   const command = process.argv[2]
   if (!command) {
-    console.error('Usage: npm run demo <setup|prestage|s1..s10|gate|oracle|full|verify|reset>')
+    console.error('Usage: npm run demo <setup|prestage|s1..s10|gate|oracle|referee|full|verify|reset>')
     process.exitCode = 1
     return
   }
@@ -222,6 +229,10 @@ async function main() {
   else if (command === 'prestage') await cmdPrestage()
   else if (command === 'gate') recordGate(await proveGate(await getClient(), loadWallets()))
   else if (command === 'oracle') await cmdOracle()
+  else if (command === 'referee') {
+    await publishConditions(await getClient(), loadWallets().manager)
+    describeMarket()
+  }
   else if (command === 'verify') await verify(await getClient())
   else if (command === 'full') await cmdFull()
   else if (/^s([1-9]|10)$/.test(command)) await cmdStep(command)
