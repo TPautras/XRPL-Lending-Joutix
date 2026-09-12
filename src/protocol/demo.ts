@@ -5,6 +5,8 @@
  *   setup     one-time: stablecoin, credentials domain, private vault, broker (no cover yet)
  *   gate      Phase 2 evidence: walks one account through every credential state and
  *             records what the ledger answers, including the uncredentialed-borrower probe
+ *   oracle    optional: manager publishes an XLS-47 Price Oracle valuing the financed
+ *             receivable (see flows/oracle.ts) -- informational, not consulted by LoanSet
  *   referee   publishes the open protection market's conditions and reveals the fulfillment
  *             for any loan the ledger says has defaulted. Idempotent — safe to re-run or
  *             loop while the market is open (see src/ui/pages/MarketPage.tsx)
@@ -29,6 +31,7 @@ import { originate, pay, impair, defaultLoan, type LoanTerms } from './flows/loa
 import { sellProtection, payPremium, payoutProtection } from './flows/insurance.js'
 import { overWithdraw, intruderDeposit, revokedStillWithdraws } from './flows/rejections.js'
 import { proveGate } from './flows/gate.js'
+import { publishReceivablePrice } from './flows/oracle.js'
 import { publishConditions, revealDefaulted, describeMarket } from './flows/market.js'
 import { verify } from './flows/report.js'
 
@@ -81,6 +84,22 @@ async function cmdPrestage() {
   const defaultableAt = loanB.startDate + loanB.paymentInterval + loanB.gracePeriod
   console.log(`\nLoan B defaultable once ledger time passes ${defaultableAt} (in ~${loanB.paymentInterval + loanB.gracePeriod}s).`)
   console.log('Go on stage now; run `npm run demo s9` once that has elapsed.')
+}
+
+/** Optional, time-permitting per CLAUDE.md's architecture table: the manager
+ * publishes its valuation of the receivable currently financed as an XLS-47 Price
+ * Oracle. Not part of `s1`..`s10` — the numbered demo script is already verified
+ * end to end and this adds no dependency on it, so it stays a standalone command,
+ * same as `gate`. */
+async function cmdOracle() {
+  const client = await getClient()
+  const w = loadWallets()
+  await publishReceivablePrice(client, w.manager, {
+    baseAsset: 'TFEUR',
+    quoteAsset: 'XRP',
+    price: 0.5,
+    scale: 2,
+  })
 }
 
 async function cmdStep(step: string) {
@@ -189,7 +208,7 @@ async function cmdFull() {
 async function main() {
   const command = process.argv[2]
   if (!command) {
-    console.error('Usage: npm run demo <setup|prestage|s1..s10|gate|referee|full|verify|reset>')
+    console.error('Usage: npm run demo <setup|prestage|s1..s10|gate|oracle|referee|full|verify|reset>')
     process.exitCode = 1
     return
   }
@@ -209,6 +228,7 @@ async function main() {
   if (command === 'setup') await cmdSetup()
   else if (command === 'prestage') await cmdPrestage()
   else if (command === 'gate') recordGate(await proveGate(await getClient(), loadWallets()))
+  else if (command === 'oracle') await cmdOracle()
   else if (command === 'referee') {
     await publishConditions(await getClient(), loadWallets().manager)
     describeMarket()

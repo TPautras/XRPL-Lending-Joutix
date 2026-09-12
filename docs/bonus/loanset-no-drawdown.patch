@@ -1,0 +1,26 @@
+diff --git a/XLS-0066-lending-protocol/README.md b/XLS-0066-lending-protocol/README.md
+index 14fe5fc..7e3274a 100644
+--- a/XLS-0066-lending-protocol/README.md
++++ b/XLS-0066-lending-protocol/README.md
+@@ -46,7 +46,7 @@ The flow of the lending protocol is as follows:
+ 2. The Loan Broker creates a `LoanBroker` ledger entry with a `LoanBrokerSet` transaction.
+ 3. The Depositors deposit assets into the `Vault`.
+ 4. Optionally, the Loan Broker deposits First-Loss Capital into the `LoanBroker` with the `LoanBrokerCoverDeposit` transaction.
+-5. The Loan Broker and Borrower create a `Loan` object with a `LoanSet` transaction and the requested principal (excluding fees) is transered to the Borrower.
++5. The Loan Broker and Borrower create a `Loan` object with a `LoanSet` transaction and the requested principal (excluding fees) is transferred to the Borrower immediately, in the same transaction — see the note in [3.8](#38-transaction-loanset) below.
+ 6. If the Borrower fails to pay the Loan, the Loan Broker can default the `Loan` using the `LoanManage` transaction.
+ 7. Once the Loan has matured (or defaulted), the Borrower or the Loan Broker can delete it using a `LoanDelete` transaction.
+ 8. Optionally, the Loan Broker can withdraw the First-Loss Capital using the `LoanBrokerCoverWithdraw` transaction.
+@@ -970,6 +970,12 @@ This transaction uses the standard transaction fee.
+ 
+ The transaction creates a new `Loan` object.
+ 
++> **Note:** `LoanSet` both originates the Loan and disburses the principal in the
++> same transaction — see [3.8.6 State Changes](#386-state-changes), item 5. There
++> is no separate drawdown/funding step. Readers modeling this against traditional
++> lending vocabulary, where origination and initial funding are usually distinct
++> events, should treat Loan creation and disbursement as atomic here.
++
+ #### 3.8.1 Fields
+ 
+ | Field Name                | Required | JSON Type | Internal Type | Default Value | Description                                                                                                                                   |

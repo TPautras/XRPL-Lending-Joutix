@@ -25,6 +25,24 @@ export async function mptBalance(client: Client, account: string, issuanceId: st
   return (match?.MPTAmount as string | undefined) ?? '0'
 }
 
+export async function oracleInfo(
+  client: Client,
+  account: string,
+  documentId: number,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const { result } = await client.request({
+      command: 'ledger_entry',
+      oracle: { account, oracle_document_id: documentId },
+      ledger_index: 'validated',
+    } as never)
+    return (result as { node: Record<string, unknown> }).node
+  } catch {
+    // Deleted or never published -- ledger_entry errors rather than returning null.
+    return null
+  }
+}
+
 export async function accountEscrows(client: Client, account: string): Promise<Array<Record<string, unknown>>> {
   const { result } = await client.request({
     command: 'account_objects',

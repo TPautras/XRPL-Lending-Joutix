@@ -36,8 +36,9 @@ export function App() {
         </a>
         <div className="header-right">
           <span className="chip">{NETWORK.name}</span>
-          {/* The only wallet-facing control in the app. It opens xrpl-connect's modal and
-              nothing else: no screen here submits a TrustFlow transaction (CLAUDE.md). */}
+          {/* Opens xrpl-connect's modal. Once connected, Dashboard, The Gate and Market all
+              submit single-signed TrustFlow transactions from this same wallet — see
+              CLAUDE.md "The webapp" for the one exception (LoanSet, dual-signed). */}
           <WalletConnector />
         </div>
       </header>
@@ -60,17 +61,10 @@ export function App() {
 
       <footer className="footer muted">
         <span>
-          {route === '/market' ? (
-            <>
-              The one screen that signs: a policy here is submitted by your own wallet, over your
-              own XRP. Every other page is read-only — signed by <code>src/protocol/</code>.
-            </>
-          ) : (
-            <>
-              Read-only by construction — every transaction is signed by <code>src/protocol/</code>,
-              never by this page.
-            </>
-          )}
+          Connect a wallet to deposit, withdraw, repay, post cover, accept a credential or trade
+          protection — every one of those needs only your own signature. <code>LoanSet</code> stays
+          scripted in <code>src/protocol/</code>: it is dual-signed (borrower + broker), which no
+          single connected wallet can do alone.
         </span>
         <code>{NETWORK.wss}</code>
       </footer>

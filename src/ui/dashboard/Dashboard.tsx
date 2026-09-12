@@ -1,13 +1,18 @@
+import { useState } from 'react'
+import type { SubmittableTransaction } from 'xrpl'
 import { NeedsDemo, Panel, SectionHeading } from '../components/Panel'
-import { AddressLink } from '../components/TxLink'
+import { AddressLink, TxLink } from '../components/TxLink'
 import { useAppState, type AppState } from '../lib/appState'
 import { useLedger } from '../lib/ledger'
+import { useMptBalance, useRedeemable, useWalletSubmit } from '../lib/walletActions'
+import { useXrpBalance } from '../lib/market'
 import { useProtection, type ProtectionView } from '../lib/protection'
 import {
   clockTime,
   countdown,
   coverRatePercent,
   eur,
+  eurToBaseUnits,
   fillPercent,
   isoToClock,
   lessThanBase,
@@ -15,8 +20,10 @@ import {
   sharePrice,
   subtractBase,
   units,
+  xrp,
 } from '../lib/format'
 import { hrefFor } from '../lib/router'
+import { useWallet } from '../wallet/WalletContext'
 import { useDashboard, type BrokerView, type DashboardData, type LoanView, type VaultView } from './useDashboard'
 
 function ReservePanel({ vault }: { vault: VaultView | null }) {
@@ -63,7 +70,18 @@ function ReservePanel({ vault }: { vault: VaultView | null }) {
   )
 }
 
-function CushionPanel({ broker }: { broker: BrokerView | null }) {
+function CushionPanel({
+  broker,
+  onPostCover,
+  busy,
+}: {
+  broker: BrokerView | null
+  onPostCover: (eurAmount: string) => void
+  busy: boolean
+}) {
+  const { isConnected } = useWallet()
+  const [amount, setAmount] = useState('500')
+
   if (!broker) {
     return (
       <Panel title="Manager cushion" tone="off">
@@ -102,6 +120,20 @@ function CushionPanel({ broker }: { broker: BrokerView | null }) {
       <p className="muted small">
         This is the manager’s own money, and it absorbs a default before any investor does.
       </p>
+      {isConnected && (
+        <form
+          className="inline-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            onPostCover(amount)
+          }}
+        >
+          <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" aria-label="Cover amount in EUR" />
+          <button type="submit" className="btn btn-ghost" disabled={busy}>
+            Post cover (as manager)
+          </button>
+        </form>
+      )}
     </Panel>
   )
 }
@@ -109,7 +141,21 @@ function CushionPanel({ broker }: { broker: BrokerView | null }) {
 const LOAN_TONE = { active: 'on', impaired: 'warn', defaulted: 'err' } as const
 const LOAN_LABEL = { active: 'Active', impaired: 'Impaired', defaulted: 'Defaulted' } as const
 
-function LoanCard({ slot, loan, ledgerTime }: { slot: 'A' | 'B'; loan: LoanView | null; ledgerTime: number | null }) {
+function LoanCard({
+  slot,
+  loan,
+  ledgerTime,
+  onRepay,
+  busy,
+}: {
+  slot: 'A' | 'B'
+  loan: LoanView | null
+  ledgerTime: number | null
+  onRepay: (loan: LoanView) => void
+  busy: boolean
+}) {
+  const { isConnected } = useWallet()
+
   if (!loan) {
     return (
       <Panel title={`Loan ${slot}`} tone="off">
@@ -122,6 +168,7 @@ function LoanCard({ slot, loan, ledgerTime }: { slot: 'A' | 'B'; loan: LoanView 
   }
 
   const defaultableAt = loan.nextPaymentDueDate ? loan.nextPaymentDueDate + loan.gracePeriod : null
+  const payable = loan.status !== 'defaulted' && loan.paymentRemaining > 0
 
   return (
     <Panel
@@ -157,6 +204,13 @@ function LoanCard({ slot, loan, ledgerTime }: { slot: 'A' | 'B'; loan: LoanView 
       <p className="muted small">
         Grace period {loan.gracePeriod}s after the due date — measured in ledger time, not wall clock.
       </p>
+      {isConnected && payable && (
+        <div className="form-actions">
+          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => onRepay(loan)}>
+            Repay {eur(loan.periodicPayment)} (as borrower)
+          </button>
+        </div>
+      )}
     </Panel>
   )
 }
@@ -226,6 +280,146 @@ function EventFeed() {
   )
 }
 
+/**
+ * The investor's own actions on the reserve — deposit, and redeem exactly what the
+ * connected account's shares are worth right now (mirrors `flows/vault.ts withdrawMax()`,
+ * not a face-value amount fixed at deposit time, since share price moves).
+ */
+function WalletPanel({
+  vaultId,
+  shareMptId,
+  issuanceId,
+  onDeposit,
+  onWithdrawAll,
+  busy,
+}: {
+  vaultId: string | undefined
+  shareMptId: string | undefined
+  issuanceId: string | undefined
+  onDeposit: (eurAmount: string) => void
+  onWithdrawAll: (redeemableBaseUnits: string) => void
+  busy: boolean
+}) {
+  const { account, isConnected } = useWallet()
+  const address = account?.address ?? null
+  const [amount, setAmount] = useState('1000')
+
+  const xrpBalance = useXrpBalance(address)
+  const tfeurBalance = useMptBalance(address, issuanceId)
+  const redeemable = useRedeemable(address, vaultId, shareMptId)
+
+  if (!isConnected) {
+    return (
+      <Panel title="Your wallet" tone="off">
+        <p className="muted">
+          Use <strong>Connect wallet</strong> in the header to deposit into the reserve, repay a
+          loan or post cover — from your own account, pointed at this devnet.
+        </p>
+      </Panel>
+    )
+  }
+
+  return (
+    <Panel
+      title="Your wallet"
+      aside={
+        <span className="chip">
+          <AddressLink address={address ?? ''} /> · {xrp(xrpBalance.data, 2)}
+        </span>
+      }
+    >
+      <dl className="fields">
+        <dt>TFEUR balance</dt>
+        <dd>{eur(tfeurBalance.data)}</dd>
+        {vaultId && (
+          <>
+            <dt>Redeemable now</dt>
+            <dd>{eur(redeemable.data)}</dd>
+          </>
+        )}
+      </dl>
+
+      {vaultId && issuanceId && (
+        <form
+          className="inline-form"
+          onSubmit={(e) => {
+            e.preventDefault()
+            onDeposit(amount)
+          }}
+        >
+          <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" aria-label="Deposit amount in EUR" />
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            Deposit into reserve
+          </button>
+        </form>
+      )}
+      {vaultId && (
+        <div className="form-actions">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={busy || !redeemable.data || redeemable.data === '0'}
+            onClick={() => onWithdrawAll(redeemable.data ?? '0')}
+          >
+            Withdraw everything redeemable
+          </button>
+        </div>
+      )}
+      <p className="muted small">
+        <code>VaultDeposit</code> needs an accepted <code>Credential</code> for this account if the
+        reserve is private — a visitor without one gets <code>tecNO_AUTH</code>, which is the gate
+        working, not a broken button. <code>VaultWithdraw</code> is never gated (see{' '}
+        <a href={hrefFor('/gate')}>The Gate</a>).
+      </p>
+    </Panel>
+  )
+}
+
+function SubmittedPanel({ log }: { log: ReturnType<typeof useWalletSubmit>['log'] }) {
+  return (
+    <Panel title="Submitted from this browser" tone={log.length ? 'on' : 'off'}>
+      {log.length === 0 ? (
+        <p className="muted">
+          Nothing yet. Deposits, withdrawals, repayments and cover posted from a connected wallet
+          on this page are recorded here, in this browser only.
+        </p>
+      ) : (
+        <div className="table-scroll">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Transaction</th>
+                <th>Result</th>
+                <th>Hash</th>
+              </tr>
+            </thead>
+            <tbody>
+              {log.map((entry) => (
+                <tr key={entry.hash}>
+                  <td className="nowrap">{new Date(entry.ts).toLocaleTimeString()}</td>
+                  <td>
+                    <code>{entry.type}</code>
+                    {entry.note && <span className="muted small"> — {entry.note}</span>}
+                  </td>
+                  <td>
+                    <span className={`pill pill-${entry.result === 'tesSUCCESS' ? 'success' : 'failure'}`}>
+                      <code>{entry.result}</code>
+                    </span>
+                  </td>
+                  <td>
+                    <TxLink hash={entry.hash} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
+  )
+}
+
 function StateNotice({ state, error }: { state: AppState | null; error: string | null }) {
   if (state) return null
   return (
@@ -252,8 +446,67 @@ export function Dashboard() {
   const { ledgerTime } = useLedger()
   const { data, error: rpcError } = useDashboard(state)
   const { data: protection } = useProtection(state)
+  const { pending, error: txError, clearError, log, send } = useWalletSubmit()
+  const { account } = useWallet()
 
   const view: DashboardData = data ?? { vault: null, broker: null, loans: { A: null, B: null } }
+  const address = account?.address ?? null
+  const vaultId = state?.vault?.vaultId
+  const shareMptId = state?.vault?.shareMptId
+  const issuanceId = state?.mptIssuanceId
+  const loanBrokerId = state?.loanBrokerId
+  const busy = pending !== null
+
+  const deposit = (eurAmount: string) => {
+    if (!address || !vaultId || !issuanceId) return
+    const value = eurToBaseUnits(eurAmount)
+    if (!value) return
+    void send(
+      { TransactionType: 'VaultDeposit', Account: address, VaultID: vaultId, Amount: { mpt_issuance_id: issuanceId, value } } as SubmittableTransaction,
+      `deposit ${eurAmount} EUR`,
+    )
+  }
+
+  const withdrawAll = (redeemableBaseUnits: string) => {
+    if (!address || !vaultId || !issuanceId || redeemableBaseUnits === '0') return
+    void send(
+      {
+        TransactionType: 'VaultWithdraw',
+        Account: address,
+        VaultID: vaultId,
+        Amount: { mpt_issuance_id: issuanceId, value: redeemableBaseUnits },
+      } as SubmittableTransaction,
+      'withdraw everything redeemable',
+    )
+  }
+
+  const repay = (loan: LoanView) => {
+    if (!address || !issuanceId) return
+    void send(
+      {
+        TransactionType: 'LoanPay',
+        Account: address,
+        LoanID: loan.loanId,
+        Amount: { mpt_issuance_id: issuanceId, value: loan.periodicPayment },
+      } as SubmittableTransaction,
+      `repay loan ${loan.loanId.slice(0, 8)}…`,
+    )
+  }
+
+  const postCover = (eurAmount: string) => {
+    if (!address || !loanBrokerId || !issuanceId) return
+    const value = eurToBaseUnits(eurAmount)
+    if (!value) return
+    void send(
+      {
+        TransactionType: 'LoanBrokerCoverDeposit',
+        Account: address,
+        LoanBrokerID: loanBrokerId,
+        Amount: { mpt_issuance_id: issuanceId, value },
+      } as SubmittableTransaction,
+      `post ${eurAmount} EUR cover`,
+    )
+  }
 
   return (
     <div className="page">
@@ -270,14 +523,35 @@ export function Dashboard() {
 
       <div className="grid grid-3">
         <ReservePanel vault={view.vault} />
-        <CushionPanel broker={view.broker} />
+        <CushionPanel broker={view.broker} onPostCover={postCover} busy={busy} />
         <ProtectionPanel protection={protection} />
       </div>
 
       <div className="grid grid-2">
-        <LoanCard slot="A" loan={view.loans.A} ledgerTime={ledgerTime} />
-        <LoanCard slot="B" loan={view.loans.B} ledgerTime={ledgerTime} />
+        <LoanCard slot="A" loan={view.loans.A} ledgerTime={ledgerTime} onRepay={repay} busy={busy} />
+        <LoanCard slot="B" loan={view.loans.B} ledgerTime={ledgerTime} onRepay={repay} busy={busy} />
       </div>
+
+      <WalletPanel
+        vaultId={vaultId}
+        shareMptId={shareMptId}
+        issuanceId={issuanceId}
+        onDeposit={deposit}
+        onWithdrawAll={withdrawAll}
+        busy={busy}
+      />
+
+      {txError && (
+        <div className="panel panel-error">
+          <strong>Last action</strong>
+          <p>{txError}</p>
+          <button type="button" className="btn btn-ghost" onClick={clearError}>
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <SubmittedPanel log={log} />
 
       <EventFeed />
     </div>

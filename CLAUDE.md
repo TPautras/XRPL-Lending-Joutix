@@ -10,8 +10,7 @@ repayment, default, payout — is native XLS-65/66 plus a thin coupling layer. N
 
 This replaces an earlier Track 2 (closed-ended bond) direction; that work (`docs/SPEC.md`,
 `docs/SEAMS.md`) has been deleted as abandoned. `src/ui`'s existing wallet-connection scaffold
-(`xrpl-connect`, `WalletContext`, `AccountPanel`) is untouched and kept as a single read-only
-widget — see "The webapp" for the page plan and why nothing in the browser signs.
+(`xrpl-connect`, `WalletContext`, `AccountPanel`) is untouched — see "The webapp" for the page plan.
 
 ## The four roles
 
@@ -79,7 +78,7 @@ off-protocol overlay, not a native reassignment.
 | Credentials | The gate | Core of "Loaded" |
 | Permissioned Domain | Groups the credentials the vault accepts | Core of "Loaded" |
 | TokenEscrow | The credit-insurance contract | The twist — has a documented fallback |
-| Price Oracle | Valuing the financed receivable | Optional, time-permitting |
+| Price Oracle | Valuing the financed receivable | Optional — implemented (`flows/oracle.ts`, `npm run demo oracle`), not yet exercised against a live devnet from any machine in this session |
 
 **First hour, non-negotiable:** query the Custom Hackathon Devnet node directly (`server_definitions`
 / `feature`) to confirm what's actually enabled there. Everything else depends on this — better to
@@ -175,19 +174,21 @@ page plan.
 ## The webapp
 
 React 19 + Vite, `src/ui/`. No backend. `App.tsx` is a shell — header, `components/Nav.tsx`,
-footer — over a hash router with six pages (`pages/`, plus `dashboard/`), all of them read-only.
+footer — over a hash router with six pages (`pages/`, plus `dashboard/`).
 
-**The one rule that shapes every page: the webapp is read-only.** No page gets a button that
-submits a TrustFlow transaction, for three independent reasons, and all three are worth saying
-out loud on stage rather than hiding:
-
-1. Every flow is signed in `src/protocol/` with seeds from `.env`. The browser holds no key.
-2. `LoanSet` is dual-signed — a connected wallet holds one of the two keys it needs, never both.
-3. A visitor's wallet holds no `Credential`, so a deposit from it lands `tecNO_AUTH`. That is the
-   gate working exactly as designed, but on stage it reads as a broken app.
-
-`components/AccountPanel.tsx` stays as the single wallet-facing widget: it shows the connected
-account and nothing else. Keep it that way.
+`components/AccountPanel.tsx` is the wallet-facing widget. Beyond it, Dashboard, The Gate and
+Market all submit from a connected wallet (`lib/walletActions.ts useWalletSubmit()`, the same
+autofill-sign-submit path Market proved out first, `lib/walletTx.ts`) for every TrustFlow
+transaction that needs only that account's own signature: `VaultDeposit`, `VaultWithdraw`,
+`LoanPay`, `LoanBrokerCoverDeposit`, `CredentialAccept`, and Market's `EscrowCreate`/
+`EscrowFinish`/`EscrowCancel`. `src/protocol/` with seeds from `.env` remains how the scripted
+demo (`s1`..`s10`) runs end to end, and is also the only path for `LoanSet`, `LoanBrokerSet`,
+`CredentialCreate`/`CredentialDelete`, `LoanManage` and `VaultCreate` — each either needs a key
+this app never asks a visitor for (the authority, the manager acting as broker-owner) or, for
+`LoanSet`, two signatures at once (a connected wallet only ever holds one of the two keys it
+needs). A visitor's wallet holding no `Credential` still gets `tecNO_AUTH` from a private
+vault's `VaultDeposit` — the gate working as designed, surfaced on-screen as the deliberate
+result it is (CLAUDE.md's own rule below: always show the raw engine code), not a bare failure.
 
 **Data sources, both of them:** `public/state.json` (object IDs — `saveState()` in
 `lib/state.ts` mirrors `state/hackathon.json` there on every write, so Vite serves it at
@@ -221,18 +222,27 @@ the safe screen to open on if the ledger has reset.
 `LossUnrealized`, manager cover vs `CoverRateMinimum`, the two loans with their status flags, the
 insurance state, and a ledger-close event feed. This is the screen the default trigger (`s9`) is
 performed against — the cushion draining and `LossUnrealized` moving is the whole visual payload of
-the demo. It polls `/state.json` every 5s and re-reads the ledger on every `ledgerClosed`.
+the demo. It polls `/state.json` every 5s and re-reads the ledger on every `ledgerClosed`. A
+connected wallet also gets a **Your wallet** panel (deposit, redeem exactly what its shares are
+worth right now — the same `withdrawMax` math as `s10`, never a stale face-value amount), a
+**Repay** button per loan (`LoanPay`, the `PeriodicPayment` amount — final-installment handling
+stays `flows/loan.ts`'s problem, not the UI's, since the browser only ever sends a regular payment)
+and a **Post cover** form on the cushion panel (`LoanBrokerCoverDeposit`) — all single-signed,
+all going through `lib/walletActions.ts useWalletSubmit()`.
 
 **3. The Gate.** The flavour, on screen. Each of the 8 role accounts with its address, TFEUR
 balance and credential state (`missing` / `issued, not accepted` / `accepted`) — read live via
 `account_objects type=credential`, checking **both** the subject's and the issuer's owner
 directory, because an unaccepted credential sits in the issuer's (see
-`flows/credentials.ts credentialStatus()`). Then the four-state matrix `flows/gate.ts` proved,
-with its hashes and explorer links: deposit refused with no credential, refused with an
-unaccepted one, allowed once accepted, refused again after revocation — and withdrawal still
-allowed throughout. The ungated withdrawal is labelled as an XLS-65 §7 guarantee, not our leniency.
-Below that, the deposits-gated-but-loans-not finding, stated in exactly the words the Rules
-section fixes — no "vulnerability", no "exploit".
+`flows/credentials.ts credentialStatus()`). A connected wallet gets its own status checked the same
+way, plus an **Accept credential** button (`CredentialAccept`) when the ledger says
+issued-not-accepted — the one gate-side action that needs only the subject's signature;
+`CredentialCreate`/`CredentialDelete` stay the authority's alone. Then the four-state matrix
+`flows/gate.ts` proved, with its hashes and explorer links: deposit refused with no credential,
+refused with an unaccepted one, allowed once accepted, refused again after revocation — and
+withdrawal still allowed throughout. The ungated withdrawal is labelled as an XLS-65 §7 guarantee,
+not our leniency. Below that, the deposits-gated-but-loans-not finding, stated in exactly the words
+the Rules section fixes — no "vulnerability", no "exploit".
 
 **4. Protection (insurance).** The escrow as a diagram: insurer locks, buyer pays premiums,
 manager-as-referee holds the fulfillment. Show the live escrow object and whether it is locked,
@@ -299,14 +309,26 @@ than the 20 minutes it takes to film a fallback.
 - Public repo with README (project, setup, track, environment, library version, every XLS-65/66
   transaction used)
 - Links to verified on-ledger transactions
-- Slide deck, 10 slides max
+- Slide deck, 10 slides max — ✅ drafted as an Artifact (10 slides, matches the pitch script below);
+  export/attach it to the final submission
 - Feedback report, 3 pages max, at repo root
-- Completed developer-experience form
+- Completed developer-experience form — ⬜ needs the organizer's form link; not yet done
 - DevEx capture hook installed on every machine (already set up for this session: `/xrpl-status`)
+- Backup demo video — ⬜ needs an actual screen recording of a live run against seeded devnet
+  accounts; not something buildable from a machine with no `.env`/seeds
 
 **Bonus contributions to aim for:** the drawdown-step documentation PR (simplest available fix), and
 a reusable code snippet for the two-party `LoanSet` signature flow — the single most predictable time
 sink for every team at this event.
+
+- ✅ **`LoanSet` dual-sign snippet**: `docs/snippets/loan-set-dual-sign.ts` — standalone,
+  project-independent, documents the fee-before-signing gotcha and that `autofill()` already
+  handles the `>= 2x` base fee (FEEDBACK_REPORT.md §5).
+- 🟡 **Drawdown-step doc PR**: patch + PR text ready in `docs/bonus/loanset-no-drawdown-pr.md` and
+  `docs/bonus/loanset-no-drawdown.patch`, committed locally against a clone of
+  `XRPLF/XRPL-Standards`. Not yet opened upstream — this machine has no `gh` installed/authenticated,
+  and forking a third-party repo under a personal GitHub identity needs a human's go-ahead, not an
+  unattended agent action.
 
 ## Risks and fallbacks
 
@@ -331,16 +353,20 @@ sink for every team at this event.
   uncredentialed borrower is stopped by the broker's off-ledger discretion alone, not by the
   protocol. Overstating it turns the project's second-best finding into something a judge can
   dismiss in one sentence.
-- Do not give the webapp a button that submits a TrustFlow transaction. The browser holds no key,
-  `LoanSet` needs two, and an uncredentialed visitor's deposit lands `tecNO_AUTH` — the gate
-  working correctly, but indistinguishable on stage from a broken app. See "The webapp".
-  **One deliberate exception, and only this one:** `/market` lets a connected wallet write, pay,
-  claim and reclaim credit-insurance policies. None of the three reasons above applies there — a
-  policy is an `EscrowCreate` over the visitor's own XRP,
-  single-signed, and escrows are not gated by the vault's `PermissionedDomain`. The rule stands
-  unchanged for every TrustFlow protocol transaction (deposit, loan, repayment, withdrawal) and
-  for every other screen; the market page is an overlay that touches none of them. Any new
-  submitting button needs the same three tests answered before it is written.
+- The webapp submits a TrustFlow transaction from a connected wallet only when that account's own
+  signature is everything the transaction needs: `VaultDeposit`, `VaultWithdraw`, `LoanPay`,
+  `LoanBrokerCoverDeposit`, `CredentialAccept` (Dashboard, The Gate), and Market's
+  `EscrowCreate`/`EscrowFinish`/`EscrowCancel`. Before wiring up any new submitting button, answer:
+  does this need a second party's signature (`LoanSet` — dual-signed, borrower + broker, stays
+  scripted in `src/protocol/`, no exception); does it need a key this app never asks a visitor for
+  (`CredentialCreate`/`CredentialDelete` — the authority; `LoanBrokerSet`/`LoanManage`/`VaultCreate`
+  — the manager acting as broker-owner — all stay scripted); and if the connected account lacks a
+  precondition the protocol itself enforces (no accepted `Credential` on a private vault's
+  `VaultDeposit`, no shares to redeem on a `VaultWithdraw`), is the resulting `tecNO_AUTH` or
+  similar surfaced on-screen as the deliberate, expected result it is — never a bare transaction
+  failure. `Amount` fields are MPTAmount base units (see the rule below); build them with
+  `eurToBaseUnits`/`mptAmount`-equivalents in `lib/format.ts` and `lib/walletActions.ts`, never a
+  float.
 - Check every transaction result for `tesSUCCESS` and surface the raw engine result code on failure —
   for these newer tx types the code is the fastest debugging signal.
 - Amounts: respect vault `Scale` and MPT precision; never do float math on ledger amounts.

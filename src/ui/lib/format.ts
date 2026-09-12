@@ -71,6 +71,21 @@ export function xrpToDropsString(input: string): string | null {
   return drops === '0' ? null : drops
 }
 
+/**
+ * `"1500"` / `"1500.00"` → `"150000"` TFEUR base units, the inverse of `eur()` — for any
+ * page that builds a `VaultDeposit`/`LoanBrokerCoverDeposit` amount from typed input.
+ * Same discipline as `xrpToDropsString`: digits, not arithmetic, and `null` for anything
+ * that is not a plain non-negative decimal with at most `scale` places.
+ */
+export function eurToBaseUnits(input: string, scale = TFEUR_SCALE): string | null {
+  const text = input.trim()
+  const pattern = new RegExp(`^\\d+(?:\\.\\d{1,${scale}})?$`)
+  if (!pattern.test(text)) return null
+  const [whole, frac = ''] = text.split('.')
+  const units = `${whole}${frac.padEnd(scale, '0')}`.replace(/^0+(?=\d)/, '')
+  return units === '' || units === '0' ? null : units
+}
+
 /** UTF-8 → uppercase hex, for ledger fields that carry text (a `Memo`'s type and data).
  * `Buffer` is a Node global and this bundle runs in a browser, so the encoding is done
  * with `TextEncoder` rather than assuming a polyfill that is not there. */
