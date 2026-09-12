@@ -12,3 +12,4 @@ xrpl-devex-hook/
 dist/
 state/
 public/state.json
+.vite/
