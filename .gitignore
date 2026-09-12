@@ -9,3 +9,4 @@ xrpl-devex-hook/
 .env
 .env.*
 !.env.example
+dist/
