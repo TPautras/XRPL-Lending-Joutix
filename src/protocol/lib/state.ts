@@ -57,6 +57,10 @@ export interface HackathonState {
    * credential walk plus the borrow-side probe), so the Gate page renders real hashes
    * instead of a table retyped by hand. */
   gate?: { ts: string; observations: GateObservationRecord[] }
+  /** The manager's XLS-47 Price Oracle valuing the receivable currently financed —
+   * see `flows/oracle.ts`. Informational only: `LoanSet`/`LoanManage` consult no
+   * `Oracle` object, so nothing here feeds back into loan-to-value or cover math. */
+  oracle?: { documentId: number; account: string; baseAsset: string; quoteAsset: string }
   txLog: Array<{ ts: string; type: string; result: string; hash: string }>
 }
 

@@ -243,7 +243,7 @@ src/protocol/            everything that signs (Node, tsx)
   probe.ts               Phase 0 — amendments, funding, balances
   demo.ts                the step runner: setup · gate · prestage · s1..s10 · full · verify · reset
   flows/                 one file per primitive — stablecoin, domain, credentials, vault,
-                         broker, loan, insurance, rejections, gate, report
+                         broker, loan, insurance, rejections, gate, report, oracle
   lib/                   client, wallets, submit, MPT scaling, crypto-conditions, state I/O,
                          friction logging
 src/ui/                  the read-only webapp (React 19 + Vite)
@@ -251,6 +251,8 @@ src/ui/                  the read-only webapp (React 19 + Vite)
   lib/                   router, shared ledger socket, state polling, formatting, evidence
 state/hackathon.json     object IDs + tx log (gitignored) → mirrored to public/state.json
 docs/FRICTION.md         raw, timestamped friction log
+docs/snippets/           standalone bonus contributions, decoupled from this repo's own types
+docs/bonus/              the drawdown-step doc-fix PR, drafted and ready, not yet opened upstream
 FEEDBACK_REPORT.md       the distilled developer feedback report (deliverable)
 CLAUDE.md                design rationale, build order, demo script, the rules
 ```
@@ -340,3 +342,4 @@ the 20 minutes it takes to film a fallback.
 | `LoanBrokerSet`, `LoanBrokerCoverDeposit` | `flows/broker.ts` — the manager's first-loss cushion |
 | `LoanSet` (dual-signed), `LoanPay`, `LoanManage` | `flows/loan.ts` — origination, repayment, impairment, default |
 | `EscrowCreate`, `EscrowFinish`, `EscrowCancel` | `flows/insurance.ts` — the credit-insurance overlay |
+| `OracleSet`, `OracleDelete` | `flows/oracle.ts` — optional: the manager's valuation of the financed receivable (`npm run demo oracle`); informational only, not consulted by `LoanSet`/`LoanManage` |

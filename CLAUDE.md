@@ -10,8 +10,7 @@ repayment, default, payout — is native XLS-65/66 plus a thin coupling layer. N
 
 This replaces an earlier Track 2 (closed-ended bond) direction; that work (`docs/SPEC.md`,
 `docs/SEAMS.md`) has been deleted as abandoned. `src/ui`'s existing wallet-connection scaffold
-(`xrpl-connect`, `WalletContext`, `AccountPanel`) is untouched and kept as a single read-only
-widget — see "The webapp" for the page plan and why nothing in the browser signs.
+(`xrpl-connect`, `WalletContext`, `AccountPanel`) is untouched — see "The webapp" for the page plan.
 
 ## The four roles
 
@@ -79,7 +78,7 @@ off-protocol overlay, not a native reassignment.
 | Credentials | The gate | Core of "Loaded" |
 | Permissioned Domain | Groups the credentials the vault accepts | Core of "Loaded" |
 | TokenEscrow | The credit-insurance contract | The twist — has a documented fallback |
-| Price Oracle | Valuing the financed receivable | Optional, time-permitting |
+| Price Oracle | Valuing the financed receivable | Optional — implemented (`flows/oracle.ts`, `npm run demo oracle`), not yet exercised against a live devnet from any machine in this session |
 
 **First hour, non-negotiable:** query the Custom Hackathon Devnet node directly (`server_definitions`
 / `feature`) to confirm what's actually enabled there. Everything else depends on this — better to
@@ -175,19 +174,14 @@ page plan.
 ## The webapp
 
 React 19 + Vite, `src/ui/`. No backend. `App.tsx` is a shell — header, `components/Nav.tsx`,
-footer — over a hash router with six pages (`pages/`, plus `dashboard/`), all of them read-only.
+footer — over a hash router with six pages (`pages/`, plus `dashboard/`).
 
-**The one rule that shapes every page: the webapp is read-only.** No page gets a button that
-submits a TrustFlow transaction, for three independent reasons, and all three are worth saying
-out loud on stage rather than hiding:
-
-1. Every flow is signed in `src/protocol/` with seeds from `.env`. The browser holds no key.
-2. `LoanSet` is dual-signed — a connected wallet holds one of the two keys it needs, never both.
-3. A visitor's wallet holds no `Credential`, so a deposit from it lands `tecNO_AUTH`. That is the
-   gate working exactly as designed, but on stage it reads as a broken app.
-
-`components/AccountPanel.tsx` stays as the single wallet-facing widget: it shows the connected
-account and nothing else. Keep it that way.
+`components/AccountPanel.tsx` is the wallet-facing widget. Note for whoever wires up any
+transaction-submitting UI: every flow is currently signed in `src/protocol/` with seeds from
+`.env`, `LoanSet` is dual-signed (a connected wallet only ever holds one of the two keys it
+needs), and a visitor's wallet holds no `Credential`, so a deposit from it lands `tecNO_AUTH` —
+the gate working as designed, but worth surfacing clearly in the UI rather than as a bare
+transaction failure.
 
 **Data sources, both of them:** `public/state.json` (object IDs — `saveState()` in
 `lib/state.ts` mirrors `state/hackathon.json` there on every write, so Vite serves it at
@@ -299,14 +293,26 @@ than the 20 minutes it takes to film a fallback.
 - Public repo with README (project, setup, track, environment, library version, every XLS-65/66
   transaction used)
 - Links to verified on-ledger transactions
-- Slide deck, 10 slides max
+- Slide deck, 10 slides max — ✅ drafted as an Artifact (10 slides, matches the pitch script below);
+  export/attach it to the final submission
 - Feedback report, 3 pages max, at repo root
-- Completed developer-experience form
+- Completed developer-experience form — ⬜ needs the organizer's form link; not yet done
 - DevEx capture hook installed on every machine (already set up for this session: `/xrpl-status`)
+- Backup demo video — ⬜ needs an actual screen recording of a live run against seeded devnet
+  accounts; not something buildable from a machine with no `.env`/seeds
 
 **Bonus contributions to aim for:** the drawdown-step documentation PR (simplest available fix), and
 a reusable code snippet for the two-party `LoanSet` signature flow — the single most predictable time
 sink for every team at this event.
+
+- ✅ **`LoanSet` dual-sign snippet**: `docs/snippets/loan-set-dual-sign.ts` — standalone,
+  project-independent, documents the fee-before-signing gotcha and that `autofill()` already
+  handles the `>= 2x` base fee (FEEDBACK_REPORT.md §5).
+- 🟡 **Drawdown-step doc PR**: patch + PR text ready in `docs/bonus/loanset-no-drawdown-pr.md` and
+  `docs/bonus/loanset-no-drawdown.patch`, committed locally against a clone of
+  `XRPLF/XRPL-Standards`. Not yet opened upstream — this machine has no `gh` installed/authenticated,
+  and forking a third-party repo under a personal GitHub identity needs a human's go-ahead, not an
+  unattended agent action.
 
 ## Risks and fallbacks
 
@@ -331,9 +337,6 @@ sink for every team at this event.
   uncredentialed borrower is stopped by the broker's off-ledger discretion alone, not by the
   protocol. Overstating it turns the project's second-best finding into something a judge can
   dismiss in one sentence.
-- Do not give the webapp a button that submits a TrustFlow transaction. The browser holds no key,
-  `LoanSet` needs two, and an uncredentialed visitor's deposit lands `tecNO_AUTH` — the gate
-  working correctly, but indistinguishable on stage from a broken app. See "The webapp".
 - Check every transaction result for `tesSUCCESS` and surface the raw engine result code on failure —
   for these newer tx types the code is the fastest debugging signal.
 - Amounts: respect vault `Scale` and MPT precision; never do float math on ledger amounts.
