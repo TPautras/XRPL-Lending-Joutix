@@ -1,0 +1,25 @@
+/* The Protection page's escrow diagram — an inline SVG, and the one thing that never became
+   a component. These rules style SVG primitives (`rect`, `text`, `marker`) with the theme
+   tokens from `styles.css`; everything else that used to live in this file is now a
+   component under `components/ui/` or a utility class. */
+
+.diagram-scroll { overflow-x: auto; }
+.diagram { width: 100%; min-width: 620px; height: auto; }
+
+.dg-node rect { fill: var(--popover); stroke: var(--border-strong); }
+.dg-node text { fill: var(--foreground); font-size: 13px; font-weight: 600; text-anchor: middle; }
+.dg-node .dg-sub { fill: var(--muted-foreground); font-size: 11px; font-weight: 400; }
+.dg-node-accent rect { stroke: var(--primary); fill: var(--accent-soft); }
+.dg-node-err rect { stroke: rgba(255, 107, 107, 0.5); fill: var(--err-soft); }
+
+/* A marker's content inherits from the <defs> context, not from the line referencing it,
+   so `currentColor` inside it would resolve to the page text colour — set it explicitly. */
+.diagram marker path { fill: var(--border-strong); }
+
+.dg-edge { color: var(--border-strong); }
+.dg-edge line, .dg-edge path { stroke: var(--border-strong); stroke-width: 1.5; }
+.dg-label { fill: var(--muted-foreground); font-size: 11px; text-anchor: middle; }
+.dg-label-err { fill: var(--err); }
+.dg-edge-broken { color: var(--err); }
+.dg-edge-broken path { stroke: var(--err); opacity: 0.8; }
+.dg-cross line { stroke: var(--err); stroke-width: 2.5; }

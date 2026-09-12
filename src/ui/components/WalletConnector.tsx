@@ -1,4 +1,6 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
+import { Wallet } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import type { WalletConnectorElement } from 'xrpl-connect'
 import { useWallet } from '../wallet/WalletContext'
 import { enabledWalletIds } from '../wallet/config'
@@ -47,14 +49,9 @@ export function WalletConnector() {
 
   return (
     <>
-      <button
-        type="button"
-        className="btn btn-primary"
-        disabled={isConnected}
-        onClick={() => connector()?.open()}
-      >
-        {isConnected ? 'Wallet connected' : 'Connect wallet'}
-      </button>
+      <Button type="button" disabled={isConnected} onClick={() => connector()?.open()}>
+        <Wallet /> {isConnected ? 'Wallet connected' : 'Connect wallet'}
+      </Button>
 
       <xrpl-wallet-connector
         ref={connectorRef}

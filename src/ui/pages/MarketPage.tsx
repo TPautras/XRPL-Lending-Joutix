@@ -1,6 +1,11 @@
 import { useCallback, useMemo, useState } from 'react'
 import { isValidClassicAddress, type SubmittableTransaction } from 'xrpl'
-import { NeedsDemo, Panel, SectionHeading } from '../components/Panel'
+import { Chip, NeedsDemo, Panel, SectionHeading } from '../components/Panel'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AddressLink, TxLink } from '../components/TxLink'
 import { useAppState } from '../lib/appState'
 import { countdown, shortHash, textToHex, xrp, xrpToDropsString } from '../lib/format'
@@ -19,17 +24,14 @@ import { submitFromWallet } from '../lib/walletTx'
 import { useWallet } from '../wallet/WalletContext'
 
 /**
- * The open protection market — the one screen in TrustFlow that submits from the browser.
+ * The open protection market — the screen that proved the browser could submit at all, and
+ * whose autofill-sign-submit path the Dashboard and The Gate now share via
+ * `lib/walletActions.ts`.
  *
- * Everywhere else the app is read-only by construction, for three reasons that are all
- * about the protocol layer (CLAUDE.md "The webapp"): the browser holds no protocol key,
- * `LoanSet` needs two signatures, and a visitor holding no `Credential` would be refused a
- * `VaultDeposit` with `tecNO_AUTH` — correct behaviour that reads as a broken app on
- * stage. A policy written here is none of those things. It is an `EscrowCreate` over the
- * visitor's own XRP, single-signed, and escrows are not gated by the vault's
- * `PermissionedDomain` — which is the same asymmetry `FEEDBACK_REPORT.md` §2 reports from
- * the other side: the insurance overlay sits outside the protocol, so it is open to
- * everyone by default rather than by design.
+ * A policy is an `EscrowCreate` over the visitor's own XRP: single-signed, and not gated by
+ * the vault's `PermissionedDomain`. That last part is the same asymmetry
+ * `FEEDBACK_REPORT.md` §2 reports from the other side — the insurance overlay sits outside
+ * the protocol, so it is open to everyone by default rather than by design.
  *
  * The honest part is at the bottom of the page: nothing on-ledger connects one of these
  * escrows to the loan it insures. The referee publishes a secret, and that is the entire
@@ -188,7 +190,7 @@ export function MarketPage() {
   const busy = pending !== null
 
   return (
-    <div className="page">
+    <div className="flex flex-col gap-4">
       <SectionHeading
         sub={
           <>
@@ -210,9 +212,15 @@ export function MarketPage() {
           <Panel
             title="How a policy works here"
             tone="on"
-            aside={referee && <span className="chip">referee&nbsp;<AddressLink address={referee} /></span>}
+            aside={
+              referee && (
+                <Chip>
+                  referee&nbsp;<AddressLink address={referee} />
+                </Chip>
+              )
+            }
           >
-            <ol className="steps">
+            <ol className="m-0 grid list-decimal gap-2 pl-5 text-sm">
               <li>
                 <strong>The referee publishes a condition</strong> per loan — a PREIMAGE-SHA-256
                 hash. The preimage that opens it stays with them.
@@ -233,51 +241,51 @@ export function MarketPage() {
                 to the seller, who keeps the premiums.
               </li>
             </ol>
-            <p className="muted small">
+            <p className="text-muted-foreground mt-2.5 text-[13px]">
               Verified on this devnet: an escrow is listed in both the seller's and the buyer's
               owner directory, and a third party who is neither can finish it.
             </p>
           </Panel>
 
           <Panel title="Reference loans" tone="on">
-            <div className="table-scroll">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Loan</th>
-                    <th>Condition</th>
-                    <th>State</th>
-                  </tr>
-                </thead>
-                <tbody>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Loan</TableHead>
+                    <TableHead>Condition</TableHead>
+                    <TableHead>State</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {conditions.map((entry) => (
-                    <tr key={entry.condition}>
-                      <th scope="row">Loan {entry.loan}</th>
-                      <td>
+                    <TableRow key={entry.condition}>
+                      <TableCell className="font-semibold">Loan {entry.loan}</TableCell>
+                      <TableCell>
                         <code title={entry.condition}>{shortHash(entry.condition, 16, 6)}</code>
-                      </td>
-                      <td>
+                      </TableCell>
+                      <TableCell>
                         {entry.revealed ? (
-                          <span className="pill pill-expected">
+                          <Badge variant="warn" className="gap-1.5 px-2.5 py-1">
                             <code>defaulted</code>
-                            <span className="pill-tag">claimable</span>
-                          </span>
+                            <span className="text-[10.5px] tracking-wide uppercase opacity-75">claimable</span>
+                          </Badge>
                         ) : (
-                          <span className="pill pill-success">
+                          <Badge variant="ok" className="gap-1.5 px-2.5 py-1">
                             <code>performing</code>
-                          </span>
+                          </Badge>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </Panel>
 
           {!isConnected ? (
             <Panel title="Connect a wallet to take a position" tone="warn">
-              <p className="muted">
+              <p className="text-muted-foreground text-sm">
                 Use <strong>Connect wallet</strong> in the header. Your wallet must be pointed at{' '}
                 <code>wss://lending-hackathon.dev.ripplex.io:51233</code> — a policy signed against
                 another network lands on a ledger where none of this exists.
@@ -288,15 +296,19 @@ export function MarketPage() {
               title="Write a policy"
               tone="on"
               aside={
-                <span className="chip">
+                <Chip>
                   <AddressLink address={address ?? ''} /> · {xrp(balance.data, 2)}
-                </span>
+                </Chip>
               }
             >
-              <div className="form">
-                <label className="form-field">
-                  <span>Reference loan</span>
-                  <select value={loan || conditions[0]?.loan} onChange={(e) => setLoan(e.target.value)}>
+              <div className="my-3.5 grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-3.5">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-muted-foreground text-[13px]">Reference loan</span>
+                  <select
+                    className="border-input bg-muted h-9 rounded-md border px-3 text-sm"
+                    value={loan || conditions[0]?.loan}
+                    onChange={(e) => setLoan(e.target.value)}
+                  >
                     {conditions.map((entry) => (
                       <option key={entry.condition} value={entry.loan}>
                         Loan {entry.loan} {entry.revealed ? '(already defaulted)' : ''}
@@ -304,29 +316,29 @@ export function MarketPage() {
                     ))}
                   </select>
                 </label>
-                <label className="form-field">
-                  <span>Protection buyer</span>
-                  <input
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-muted-foreground text-[13px]">Protection buyer</span>
+                  <Input
                     value={buyer}
                     onChange={(e) => setBuyer(e.target.value)}
                     placeholder="r… — who gets paid if the loan defaults"
                     spellCheck={false}
                   />
                 </label>
-                <label className="form-field">
-                  <span>Cover (XRP)</span>
-                  <input value={cover} onChange={(e) => setCover(e.target.value)} inputMode="decimal" />
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-muted-foreground text-[13px]">Cover (XRP)</span>
+                  <Input value={cover} onChange={(e) => setCover(e.target.value)} inputMode="decimal" />
                 </label>
-                <label className="form-field">
-                  <span>Expires in (minutes)</span>
-                  <input value={expiry} onChange={(e) => setExpiry(e.target.value)} inputMode="numeric" />
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-muted-foreground text-[13px]">Expires in (minutes)</span>
+                  <Input value={expiry} onChange={(e) => setExpiry(e.target.value)} inputMode="numeric" />
                 </label>
               </div>
-              <div className="form-actions">
-                <button type="button" className="btn btn-primary" onClick={writePolicy} disabled={busy}>
+              <div className="flex flex-wrap items-center gap-3.5">
+                <Button type="button" onClick={writePolicy} disabled={busy}>
                   {pending === 'write' ? 'Waiting for your wallet…' : 'Lock the cover'}
-                </button>
-                <span className="muted small">
+                </Button>
+                <span className="text-muted-foreground text-[13px]">
                   Signs an <code>EscrowCreate</code> from your account. Your XRP is locked until the
                   loan defaults or the expiry passes.
                 </span>
@@ -335,13 +347,15 @@ export function MarketPage() {
           )}
 
           {error && (
-            <div className="panel panel-error">
+            <Alert className="border-err/40" role="alert" aria-live="polite">
+              <AlertDescription>
               <strong>Last action</strong>
               <p>{error}</p>
-              <button type="button" className="btn btn-ghost" onClick={() => setError(null)}>
-                Dismiss
-              </button>
-            </div>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setError(null)}>
+                  Dismiss
+                </Button>
+              </AlertDescription>
+            </Alert>
           )}
 
           <Panel
@@ -349,7 +363,7 @@ export function MarketPage() {
             tone={rows.length ? 'on' : 'off'}
             aside={
               <form
-                className="inline-form"
+                className="flex flex-wrap items-center gap-2"
                 onSubmit={(e) => {
                   e.preventDefault()
                   if (isValidClassicAddress(extraAccount)) {
@@ -360,143 +374,149 @@ export function MarketPage() {
                   }
                 }}
               >
-                <input
+                <Input
                   value={extraAccount}
                   onChange={(e) => setExtraAccount(e.target.value)}
                   placeholder="watch another account"
                   spellCheck={false}
+                  className="w-56"
                 />
-                <button type="submit" className="btn btn-ghost">
+                <Button type="submit" variant="outline" size="sm">
                   Add
-                </button>
+                </Button>
               </form>
             }
           >
             {rows.length === 0 ? (
-              <p className="muted">
+              <p className="text-muted-foreground text-sm">
                 No policies on the accounts being watched — the demo roles, your own account, and
                 anything added above. {policies.loading && 'Still reading the ledger…'}
               </p>
             ) : (
-              <div className="table-scroll">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Loan</th>
-                      <th>Seller</th>
-                      <th>Buyer</th>
-                      <th>Cover</th>
-                      <th>Expiry</th>
-                      <th>Settle</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Loan</TableHead>
+                      <TableHead>Seller</TableHead>
+                      <TableHead>Buyer</TableHead>
+                      <TableHead>Cover</TableHead>
+                      <TableHead>Expiry</TableHead>
+                      <TableHead>Settle</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {rows.map((policy) => {
                       const expired = policy.cancelAfter !== null && ledgerTime !== null && ledgerTime >= policy.cancelAfter
                       const mine = address === policy.seller || address === policy.buyer
                       return (
-                        <tr key={policy.key}>
-                          <th scope="row">
+                        <TableRow key={policy.key}>
+                          <TableCell className="font-semibold">
                             Loan {policy.loan}
-                            {mine && <span className="pill-tag"> yours</span>}
-                          </th>
-                          <td>
+                            {mine && (
+                              <span className="text-muted-foreground text-[10.5px] tracking-wide uppercase"> yours</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
                             <AddressLink address={policy.seller} />
-                          </td>
-                          <td>
+                          </TableCell>
+                          <TableCell>
                             <AddressLink address={policy.buyer} />
-                          </td>
-                          <td className="nowrap">{xrp(policy.amountDrops, 2)}</td>
-                          <td className="nowrap">
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">{xrp(policy.amountDrops, 2)}</TableCell>
+                          <TableCell className="whitespace-nowrap">
                             {countdown(policy.cancelAfter, ledgerTime)}
-                          </td>
-                          <td>
-                            <div className="row-actions">
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-2">
                               {policy.claimable && (
-                                <button
+                                <Button
                                   type="button"
-                                  className="btn btn-ghost"
+                                  variant="outline"
+                                  size="sm"
                                   disabled={busy || !isConnected}
                                   onClick={() => claim(policy)}
                                 >
                                   Claim → buyer
-                                </button>
+                                </Button>
                               )}
                               {expired && (
-                                <button
+                                <Button
                                   type="button"
-                                  className="btn btn-ghost"
+                                  variant="outline"
+                                  size="sm"
                                   disabled={busy || !isConnected}
                                   onClick={() => reclaim(policy)}
                                 >
                                   Reclaim → seller
-                                </button>
+                                </Button>
                               )}
                               {address === policy.buyer && !policy.claimable && !expired && (
-                                <button
+                                <Button
                                   type="button"
-                                  className="btn btn-ghost"
+                                  variant="outline"
+                                  size="sm"
                                   disabled={busy}
                                   onClick={() => payPremium(policy)}
                                 >
                                   Pay {premium} XRP premium
-                                </button>
+                                </Button>
                               )}
                             </div>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       )
                     })}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
             {isConnected && rows.length > 0 && (
-              <label className="form-field form-field-inline">
-                <span>Premium amount (XRP)</span>
-                <input value={premium} onChange={(e) => setPremium(e.target.value)} inputMode="decimal" />
+              <label className="mt-3.5 flex max-w-[260px] flex-col gap-1.5">
+                <span className="text-muted-foreground text-[13px]">Premium amount (XRP)</span>
+                <Input value={premium} onChange={(e) => setPremium(e.target.value)} inputMode="decimal" />
               </label>
             )}
           </Panel>
 
           <Panel title="Submitted from this browser" tone={log.length ? 'on' : 'off'}>
             {log.length === 0 ? (
-              <p className="muted">
+              <p className="text-muted-foreground text-sm">
                 Nothing yet. Transactions you send from this page are recorded here, in this
                 browser only — the Explorer's log is written by the protocol scripts and cannot
                 see them.
               </p>
             ) : (
-              <div className="table-scroll">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>When</th>
-                      <th>Transaction</th>
-                      <th>Result</th>
-                      <th>Hash</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>When</TableHead>
+                      <TableHead>Transaction</TableHead>
+                      <TableHead>Result</TableHead>
+                      <TableHead>Hash</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {log.map((entry) => (
-                      <tr key={entry.hash}>
-                        <td className="nowrap">{new Date(entry.ts).toLocaleTimeString()}</td>
-                        <td>
+                      <TableRow key={entry.hash}>
+                        <TableCell className="whitespace-nowrap">{new Date(entry.ts).toLocaleTimeString()}</TableCell>
+                        <TableCell>
                           <code>{entry.type}</code>
-                          {entry.note && <span className="muted small"> — {entry.note}</span>}
-                        </td>
-                        <td>
+                          {entry.note && <span className="text-muted-foreground text-[13px]"> — {entry.note}</span>}
+                        </TableCell>
+                        <TableCell>
                           <span className={`pill pill-${entry.result === 'tesSUCCESS' ? 'success' : 'failure'}`}>
                             <code>{entry.result}</code>
                           </span>
-                        </td>
-                        <td>
+                        </TableCell>
+                        <TableCell>
                           <TxLink hash={entry.hash} />
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
           </Panel>
@@ -520,7 +540,7 @@ export function MarketPage() {
               <code>Payment</code> tied to the policy by a memo convention and nothing else — miss
               one and the escrow does not notice.
             </p>
-            <p className="muted small">
+            <p className="text-muted-foreground mt-2.5 text-[13px]">
               The same three gaps, from the demo's own side, are <code>FEEDBACK_REPORT.md</code> §1
               and §4. This page exists to show what they cost once strangers' money is behind them.
             </p>

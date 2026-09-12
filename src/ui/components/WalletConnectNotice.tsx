@@ -1,3 +1,4 @@
+import { Panel } from './Panel'
 import { WALLETCONNECT_ENABLED } from '../wallet/config'
 
 /**
@@ -10,14 +11,13 @@ export function WalletConnectNotice() {
   if (WALLETCONNECT_ENABLED) return null
 
   return (
-    <div className="panel panel-notice">
-      <strong>WalletConnect is off</strong>
-      <p>
+    <Panel title="WalletConnect is off" tone="warn">
+      <p className="text-sm">
         The <a href="https://github.com/oz-ross/xrpl-dev-wallet-extension" target="_blank" rel="noreferrer">XRPL
         Dev Wallet</a> extension injects nothing into the page — it pairs only over
         WalletConnect, so it cannot appear in the list until that adapter is enabled.
       </p>
-      <ol className="steps">
+      <ol className="m-0 mt-3 grid list-decimal gap-2 pl-5 text-sm">
         <li>
           Get a free project id at <code>cloud.walletconnect.com</code> (now Reown). The
           extension needs one too, in its own <code>.env</code> as <code>WC_PROJECT_ID</code>;
@@ -36,6 +36,6 @@ export function WalletConnectNotice() {
           the extension popup&rsquo;s &ldquo;Paste wc:… URI from the dApp&rdquo; field.
         </li>
       </ol>
-    </div>
+    </Panel>
   )
 }

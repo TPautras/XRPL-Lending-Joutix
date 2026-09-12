@@ -2,14 +2,16 @@ import type { Client, SubmittableTransaction, TxResponse } from 'xrpl'
 import type { WalletManager } from 'xrpl-connect'
 
 /**
- * Submitting from the browser — the one place in this app that does.
+ * Autofill, sign with the connected wallet, submit, wait for validation — the single path
+ * every browser submission in this app takes. The Market page proved it out first;
+ * `lib/walletActions.ts useWalletSubmit()` now wraps it for the Dashboard and The Gate too.
  *
- * The rest of TrustFlow is read-only on purpose (CLAUDE.md "The webapp"), and the three
- * reasons for that all concern the *protocol*: the browser holds no protocol key, LoanSet
- * needs two signatures, and a visitor holds no Credential so a VaultDeposit from them is
- * refused. None of the three applies to the protection market: a policy is an EscrowCreate
- * over the visitor's own XRP, single-signed, and escrows are not gated by the vault's
- * PermissionedDomain. So this path exists here and nowhere else.
+ * What reaches this function is filtered upstream, by one question: does the transaction
+ * need anything beyond the connected account's own signature? `VaultDeposit`,
+ * `VaultWithdraw`, `LoanPay`, `LoanBrokerCoverDeposit`, `CredentialAccept` and the escrows
+ * behind a protection policy do not, and they come through here. `LoanSet` does — it is
+ * dual-signed by borrower and broker, and no wallet holds both keys — so it stays in
+ * `src/protocol/`, as do the transactions belonging to the authority and the broker-owner.
  */
 export interface WalletSubmitResult {
   hash: string

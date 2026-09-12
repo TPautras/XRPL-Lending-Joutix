@@ -123,6 +123,20 @@ export function sharePrice(
   }
 }
 
+/**
+ * A base-unit amount as a plain number, for the one place a float is legitimate: mapping a
+ * value onto pixels in a chart. The scaling itself is still `baseToDecimal`'s string
+ * arithmetic — this only drops the thousands separators and hands the result to `Number`
+ * at the very last step, the same concession `fillPercent` makes for a CSS bar width.
+ * Never feed the result back into anything that is submitted.
+ */
+export function baseToNumber(raw: string | number | null | undefined, scale = TFEUR_SCALE): number | null {
+  const formatted = baseToDecimal(raw, scale, 4)
+  if (formatted === null) return null
+  const value = Number(formatted.replace(/,/g, ''))
+  return Number.isFinite(value) ? value : null
+}
+
 /** `CoverRateMinimum` is in thousandths of a percent: 100000 = 100%. */
 export function coverRatePercent(rate: number | null | undefined): string {
   if (rate === null || rate === undefined) return '—'

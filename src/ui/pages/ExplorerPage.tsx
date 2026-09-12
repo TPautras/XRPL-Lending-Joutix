@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Panel, SectionHeading } from '../components/Panel'
+import { StatRow, StatTile } from '../components/Figures'
 import { ResultPill, resultKind, TxLink } from '../components/TxLink'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { txLogNewestFirst, useAppState } from '../lib/appState'
 import { isoToDateTime } from '../lib/format'
 import { deliberateNote, RECORDED_RUN_DATE, RECORDED_TXS } from '../lib/evidence'
@@ -45,12 +48,12 @@ export function ExplorerPage() {
   })
 
   return (
-    <div className="page">
+    <div className="flex flex-col gap-4">
       <SectionHeading
         sub={
           <>
-            Appended by <code>src/protocol/lib/submit.ts</code> on every submission — successes and
-            refusals alike — and resolved at <code>{new URL(NETWORK.explorer).host}</code>.
+            Appended by <code>src/protocol/lib/submit.ts</code> on every submission — successes and refusals alike — and
+            resolved at <code>{new URL(NETWORK.explorer).host}</code>.
           </>
         }
       >
@@ -59,122 +62,118 @@ export function ExplorerPage() {
 
       {log.length > 0 ? (
         <>
-          <div className="stat-row">
-            <div className="stat">
-              <span className="stat-value">{counts.total}</span>
-              <span className="stat-label">submitted</span>
-            </div>
-            <div className="stat">
-              <span className="stat-value value-ok">{counts.success}</span>
-              <span className="stat-label">tesSUCCESS</span>
-            </div>
-            <div className="stat">
-              <span className="stat-value value-warn">{counts.expected}</span>
-              <span className="stat-label">deliberate refusals</span>
-            </div>
-            <div className="stat">
-              <span className={`stat-value ${counts.failure ? 'value-err' : ''}`}>{counts.failure}</span>
-              <span className="stat-label">unexpected</span>
-            </div>
-          </div>
+          <StatRow>
+            <StatTile value={counts.total} label="submitted" />
+            <StatTile value={counts.success} label="tesSUCCESS" tone="ok" />
+            <StatTile value={counts.expected} label="deliberate refusals" tone="warn" />
+            <StatTile value={counts.failure} label="unexpected" tone={counts.failure ? 'err' : undefined} />
+          </StatRow>
 
           <Panel
             title="Transaction log"
             aside={
-              <div className="segmented">
+              // One filter row, scoping everything below it — never a control per column.
+              <ToggleGroup
+                type="single"
+                value={filter}
+                onValueChange={(next) => next && setFilter(next as Filter)}
+                variant="outline"
+                size="sm"
+                className="rounded-full"
+              >
                 {FILTERS.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    className={`segmented-btn ${filter === option.id ? 'segmented-btn-active' : ''}`}
-                    onClick={() => setFilter(option.id)}
-                  >
+                  <ToggleGroupItem key={option.id} value={option.id} className="px-3 text-xs">
                     {option.label}
-                  </button>
+                  </ToggleGroupItem>
                 ))}
-              </div>
+              </ToggleGroup>
             }
           >
-            <div className="table-scroll">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>When</th>
-                    <th>Transaction</th>
-                    <th>Result</th>
-                    <th>Hash</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((entry) => (
-                    <tr key={`${entry.hash}-${entry.ts}`} className={resultKind(entry.result, entry.type) === 'failure' ? 'row-err' : undefined}>
-                      <td className="nowrap">{isoToDateTime(entry.ts)}</td>
-                      <td>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>When</TableHead>
+                    <TableHead>Transaction</TableHead>
+                    <TableHead>Result</TableHead>
+                    <TableHead>Hash</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((entry, index) => (
+                    <TableRow
+                      key={`${entry.hash}-${entry.ts}-${index}`}
+                      className={resultKind(entry.result, entry.type) === 'failure' ? 'bg-err-soft' : undefined}
+                    >
+                      <TableCell className="whitespace-nowrap">{isoToDateTime(entry.ts)}</TableCell>
+                      <TableCell>
                         <code>{entry.type}</code>
                         {deliberateNote(entry.type, entry.result) && (
-                          <span className="muted small"> — {deliberateNote(entry.type, entry.result)}</span>
+                          <span className="text-muted-foreground text-xs">
+                            {' '}
+                            — {deliberateNote(entry.type, entry.result)}
+                          </span>
                         )}
-                      </td>
-                      <td>
+                      </TableCell>
+                      <TableCell>
                         <ResultPill result={entry.result} type={entry.type} />
-                      </td>
-                      <td>
+                      </TableCell>
+                      <TableCell>
                         <TxLink hash={entry.hash} />
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
                   {rows.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="muted">
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-muted-foreground">
                         Nothing matches this filter.
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </Panel>
         </>
       ) : (
         <Panel title={`Recorded run · ${RECORDED_RUN_DATE}`} tone="warn">
-          <p className="muted">
-            No live log yet — <code>public/state.json</code> has no <code>txLog</code> entries, so
-            these are the verified hashes from <code>README.md</code>. Run any demo step and this
-            page switches to the live log.
+          <p className="text-muted-foreground text-sm">
+            No live log yet — <code>public/state.json</code> has no <code>txLog</code> entries, so these are the verified
+            hashes from <code>README.md</code>. Run any demo step and this page switches to the live log.
             {error && <> Last fetch: {error}.</>}
           </p>
-          <div className="table-scroll">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Phase</th>
-                  <th>Step</th>
-                  <th>Transaction</th>
-                  <th>Result</th>
-                  <th>Hash</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div className="mt-3 overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Phase</TableHead>
+                  <TableHead>Step</TableHead>
+                  <TableHead>Transaction</TableHead>
+                  <TableHead>Result</TableHead>
+                  <TableHead>Hash</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {RECORDED_TXS.map((entry) => (
-                  <tr key={entry.hash}>
-                    <td className="nowrap">{entry.phase}</td>
-                    <td>
+                  <TableRow key={entry.hash}>
+                    <TableCell className="whitespace-nowrap">{entry.phase}</TableCell>
+                    <TableCell>
                       <code>{entry.step}</code>
-                    </td>
-                    <td>
+                    </TableCell>
+                    <TableCell>
                       {entry.type}
-                      {entry.deliberate && <span className="muted small"> — {entry.deliberate}</span>}
-                    </td>
-                    <td>
+                      {entry.deliberate && <span className="text-muted-foreground text-xs"> — {entry.deliberate}</span>}
+                    </TableCell>
+                    <TableCell>
                       <ResultPill result={entry.result} type={entry.type} />
-                    </td>
-                    <td>
+                    </TableCell>
+                    <TableCell>
                       <TxLink hash={entry.hash} />
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </Panel>
       )}
