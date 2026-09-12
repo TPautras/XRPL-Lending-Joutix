@@ -1,168 +1,173 @@
-# XRPL Closed-End Tokenized Credit Protocol
+# TrustFlow — Invoice Factoring + Credit Insurance on XRPL
 
-A bond on XRPL: a closed-ended vault whose shares are the tradable bond certificate, funding one
-fixed-term interest-bearing loan that fully repays before the vault redeems. All logic is **native
-XLS-65/66 transactions plus thin app code** — no custom contracts.
+**Hackathon: XRPL Lending Protocol — DeVinci Blockchain × Ripple, Nanterre, 2026-09-12/13.**
+Track **1** (open-ended vault, Lending Protocol **V1**, Custom Hackathon Devnet) · Flavour **Loaded**.
 
-Full rationale, amendment matrix, field reference and unbuilt-phase designs: **`docs/SPEC.md`**.
-Read it when you need the *why* or a phase you have not built yet; do not duplicate it here.
+An SME ships, invoices, and waits 60–90 days to get paid. TrustFlow pays it immediately: investors
+pool capital in a shared reserve, a manager selects which invoices to fund by putting their own
+money first-loss, and an insurer covers default risk on a given loan. Every step — deposit, loan,
+repayment, default, payout — is native XLS-65/66 plus a thin coupling layer. No custom contracts.
 
-## Vault lifecycle — the spine of the demo
+This replaces an earlier Track 2 (closed-ended bond) direction; that work (`docs/SPEC.md`,
+`docs/SEAMS.md`) has been deleted as abandoned. `src/ui`'s existing wallet-connection scaffold
+(`xrpl-connect`, `WalletContext`, `AccountPanel`) is untouched and its reuse is still an open
+decision — do not assume it fits TrustFlow's screens without checking.
 
-A closed-ended vault has two UInt32 Ripple-epoch dates that cut its life into three phases:
+## The four roles
 
-| Phase | Window | Allowed | Must be rejected |
-|---|---|---|---|
-| Subscription | → `SubscriptionDate` | `VaultDeposit` | — |
-| Investment | `SubscriptionDate` → `RedemptionDate` | `LoanSet`, `LoanPay` | `VaultDeposit`, `VaultWithdraw` |
-| Redemption | `RedemptionDate` → | `VaultWithdraw` | `LoanSet` |
+| Role | Does | On-ledger primitive |
+|---|---|---|
+| Investor | Deposits into the shared reserve, gets a share back | `VaultDeposit`, vault shares (MPT) |
+| Manager (broker) | Picks which invoices to fund; posts first-loss capital before lending | `LoanBrokerSet`, `LoanBrokerCoverDeposit` |
+| SME (borrower) | Borrows against an invoice, repays on schedule | `LoanSet` (dual-signed with the broker), `LoanPay` |
+| Insurer | Sells default protection on a specific loan, locks the covered amount, keeps premiums if the loan performs | TokenEscrow (see "the wall" below) |
 
-- **Compress all dates to the event.** Minutes, not months — a full lifecycle has to run inside a
-  demo. Convert with `unixTimeToRippleTime` / `isoTimeToRippleTime` from `xrpl` (both exported, and
-  `rippleTimeToISOTime` back). Never hand-roll the 2000-01-01 epoch offset.
-- **The loan must fully amortize before `RedemptionDate`:** `PaymentInterval × PaymentRemaining`
-  from origination has to land strictly before it, or the vault redeems against an outstanding loan.
-  Assert this before submitting `LoanSet`.
+Share value rises mechanically as the reserve collects interest — no manual distribution, the
+appreciation is in the share price itself (`AssetsTotal` growth).
 
-### Verified vs unverified (as of 2026-09-12, Devnet `rippled 3.4.0-rc5`)
+## The gate (compliance) — the core of "Loaded"
 
-- ✅ `SubscriptionDate` (UInt32, nth 75) and `RedemptionDate` (UInt32, nth 76) exist in Devnet
-  `server_definitions` — they serialize and can be submitted.
-- ⚠️ They are **undocumented**: absent from the XLS-65 README on `master` and from the xrpl.org
-  `VaultCreate` reference. Which transaction carries them, and the exact reject semantics, come from
-  the ledger, not from a spec page.
-- ⚠️ **`VaultKind` gates everything** (confirmed by reading `5.2.0-beta.1`'s `validateVaultCreate`
-  source, not yet confirmed against Devnet `rippled` itself — that check is still open): a
-  `VaultKind` enum, `0` = open-ended / `1` = closed, undocumented in XLS-65 or xrpl.org, must be
-  `1` before `SubscriptionDate`/`RedemptionDate` are accepted at all; setting either while
-  `VaultKind !== 1` throws client-side. The SDK also enforces
-  `180 ≤ RedemptionDate − SubscriptionDate < 946708560` seconds — a **3-minute floor** on the
-  Investment phase, so "compress to minutes" has a hard lower bound. `VaultSet` carries neither
-  date, so they read as immutable post-creation. None of this is on any spec page; see
-  `docs/SEAMS.md`.
-- ⚠️ **SDK footgun, version-dependent — check which is pinned before trusting this:** stable
-  `xrpl@5.2.0`'s `VaultCreate` TypeScript interface declares only `Asset`, `Data`,
-  `AssetsMaximum`, `MPTokenMetadata`, `WithdrawalPolicy`, `DomainID`, `Scale` — the dates are in
-  `ripple-binary-codec` but not the type, so setting them needs a cast. The pinned
-  `5.2.0-beta.1` (see Stack below) already types `VaultKind`/`SubscriptionDate`/`RedemptionDate`,
-  so no cast is needed there — but re-verify against whatever version is actually installed
-  before assuming either way.
-- ⚠️ **No phase-specific result codes exist.** Devnet has no `tecVAULT_*`. Out-of-phase rejects will
-  surface as something generic — `tecNO_PERMISSION`, `tecEXPIRED`, `tecTOO_SOON` and
-  `tecINVALID_UPDATE_TIME` are the plausible candidates. **Do not guess in code or in the demo
-  script.** Phase 0 probes the real codes and records them in this table.
+Every participant needs a `Credential` accepted by a `PermissionedDomain` before they can deposit,
+borrow, or receive shares. **Withdrawal is deliberately left ungated**: an investor whose credential
+expires must never be locked out of their own funds. Call this out explicitly in the demo — it is a
+design choice, not an oversight.
 
-| Rejected action | Phase | Actual code | Verified |
-|---|---|---|---|
-| `VaultDeposit` | Investment | TBD | ☐ |
-| `VaultWithdraw` | Investment | TBD | ☐ |
-| `LoanSet` | Redemption | TBD | ☐ |
+## The twist and the wall: credit insurance
 
-## Stack
+An investor buys protection against a specific borrower's default. The insurer locks the covered
+amount on-ledger; the buyer pays periodic premiums. If the manager records an official default (a
+visible, timestamped `LoanManage` action), the lock releases to the buyer. Otherwise it expires and
+the insurer reclaims it and keeps the premiums. The protection contract can itself be represented as
+a transferable token — a nascent secondary market for credit risk.
 
-- TypeScript. Protocol layer in `src/protocol/` (one file per flow), demo UI in `src/ui/`
-  (Vite + React + TS, client-only, talks to Devnet over websocket).
-- `xrpl@5.2.0-beta.1` — **pinned, not stable `latest`**; verified to serialize `VaultCreate`,
-  `VaultSet`, `VaultDeposit`, `VaultWithdraw`, `LoanBrokerSet`, `LoanSet`, `LoanPay`,
-  `LoanManage`, `CredentialCreate`, `PermissionedDomainSet`, `VaultClawback`. Do not bump
-  without re-checking those types *and* the date-field gap above. History:
-  - Stable `5.2.0`'s `VaultCreate` type has **no** `SubscriptionDate`/`RedemptionDate`/
-    `VaultKind` at all — the "needs an `as any` cast" footgun below described that version.
-  - `5.2.0-beta.0` adds all three, plus a `VaultKind` enum (`0` open, `1` closed) that
-    **gates** the dates: `validateVaultCreate` rejects them unless `VaultKind: 1`, and enforces
-    `180 ≤ RedemptionDate − SubscriptionDate < 946708560` seconds. `VaultSet` carries neither
-    date, so they read as immutable after creation. None of this is documented anywhere but the
-    beta's own validator source — see `docs/SEAMS.md`.
-  - `5.2.0-beta.1`: the vault/lending transaction models are **byte-identical** to `beta.0`
-    (diffed both tarballs in full — zero changes anywhere under
-    `dist/npm/models/transactions/`). The only functional change in the whole package is to
-    `Wallet/{sponsorSigner,counterpartySigner,utils}`: sponsor- and counterparty-signed
-    transactions now use distinct `fixCleanup3_4_0` signing prefixes
-    (`encodeForSigningSponsor`/`encodeForSigningCounterparty`) instead of reusing the plain
-    transaction prefix. Relevant if the sponsored-fees-and-reserves coupling (see Event
-    requirement below) gets built — `beta.0`'s sponsor signatures may not validate against a
-    `rippled` enforcing `fixCleanup3_4_0`.
-- Run a protocol script: `npx tsx src/protocol/<name>.ts`. UI: `npm run dev`.
-- Vite + React 19 is scaffolded; `package.json` scripts are `dev`, `build`, `preview`,
-  `typecheck`, plus per-flow `tsx` invocations.
-- Wallet connection uses `xrpl-connect@0.8.2` (XRPL Commons), pinned exact. It ships **no type
-  declarations** — `src/ui/wallet/xrpl-connect.d.ts` is hand-written from the bundle's export
-  list and must be re-checked on any upgrade. Do **not** switch to
-  `@xrpl-commons/xrpl-connect-react`: it peer-requires `xrpl ^3 || ^4`, which conflicts with the
-  `xrpl@5.2.0-beta.1` pin above. See `docs/SEAMS.md`.
+**Naming: call this "credit insurance" (assurance-crédit), never "CDS", in the pitch.** Same economic
+object, but it's Coface/Allianz Trade's century-old business rather than a word that evokes 2008.
+Keep the precise technical term in the written report only.
 
-## Environment
+**The wall, and why it's the best finding of the project:** TokenEscrow can only release on a time
+condition or a crypto-condition fulfillment — it cannot read another ledger object's state. There is
+no native way for an escrow to ask "is this specific `Loan` in default?" and self-trigger. A trusted
+third party must observe the default and submit the release. **Conclusion: a truly trustless credit
+derivative is not currently buildable on XRPL.** This is exactly the kind of concrete, reproducible
+gap that scores on the 40%-weighted feedback: name the primitive, name the transactions used, name
+the exact point the protocol stops, name what's missing (a lock that can trigger on a ledger event),
+and tie it to Ripple's own programmable-lock/sponsor-signing work in progress.
 
-- Network: Devnet `wss://s.devnet.rippletest.net:51233` (`rippled 3.4.0-rc5`, `SingleAssetVault` +
-  `LendingProtocol` enabled). If it resets or lags, switch to the Lending-Devnet faucet on
-  `xrpl.org/resources/dev-tools/xrp-faucets`.
-- Accounts: fund once from the faucet, persist seeds in `.env` (gitignored), reuse across runs so
-  vault/loan objects survive between sessions. Track created object IDs (`VaultID`, `LoanBrokerID`,
-  `LoanID`, `ShareMPTID`) alongside them — scripts read them instead of re-deriving.
-- Roles to provision: issuer (stablecoin + credentials), broker, borrower, 2+ investors.
-- Vault asset: a demo stablecoin you issue yourself (IOU or MPT), not raw XRP.
-- Re-verify amendments and field availability with `server_definitions` / `feature` before building.
-  Devnet sets change; this file records a snapshot, not a guarantee.
+Already confirmed in this session's research (see `.xrpl-devex/reports/`): XLS-66 also has **no
+`LoanTransfer`** transaction — a `Loan` stays permanently tied to the Broker+Borrower pair that
+dual-signed it at creation. Any loan-level secondary market (this insurance token included) is an
+off-protocol overlay, not a native reassignment.
 
-## Design invariants
+## Two known spec/implementation gaps to log (and one bonus PR)
 
-- **One Vault + one LoanBroker per Loan.** Each share is a direct claim on one specific debt,
-  priceable on a secondary market. Pooled multi-loan vaults are a stretch goal only.
-- Reject deposits once `AssetsTotal == AssetsMaximum` — the cap is what makes it closed-end; the
-  dates are what make it closed-*ended*. Both must hold.
-- Interest reaches lenders as `AssetsTotal` growth (share appreciation), never as a separate payout.
+- **No separate drawdown step.** The current spec pays the borrower directly on `LoanSet`; the
+  hackathon brief's own minimum-bar wording still implies a separate drawdown. Document this
+  divergence — it's a ready-made documentation-fix PR (the simplest bonus contribution available).
+- **Batch transactions are currently disabled** after a security issue. Don't build anything on top
+  of them; do mention the absence as a legitimate, already-documented missing primitive.
 
-## Event requirement: coupling + seam report
+## Architecture
 
-The lending stack must be **coupled with at least one other ledger primitive**, and the seams
-reported: Permissioned Domains + Credentials, TokenEscrow, sponsored fees and reserves, MPTs.
+| Primitive | Role in TrustFlow | Criticality |
+|---|---|---|
+| Single Asset Vault (XLS-65) | Shared reserve, investor shares | Required |
+| Lending Protocol (XLS-66) | Broker, loans, repayments, first-loss cushion, default | Required |
+| MPT | Simulated stablecoin + vault shares | Required |
+| Credentials | The gate | Core of "Loaded" |
+| Permissioned Domain | Groups the credentials the vault accepts | Core of "Loaded" |
+| TokenEscrow | The credit-insurance contract | The twist — has a documented fallback |
+| Price Oracle | Valuing the financed receivable | Optional, time-permitting |
 
-Keep a running **`docs/SEAMS.md`**. Every time two primitives meet, append a short entry: what you
-wired together, what broke or surprised you, what the ledger made awkward, what you worked around.
-Write it **as you hit it**, not reconstructed at the end — the friction is the deliverable, and the
-detail is gone by the demo. Phase 2 (Credentials + PermissionedDomain gating a private vault) is the
-default coupling and already in scope; MPT share trading in Phase 3 is a second seam for free.
+**First hour, non-negotiable:** query the Custom Hackathon Devnet node directly (`server_definitions`
+/ `feature`) to confirm what's actually enabled there. Everything else depends on this — better to
+know it Saturday noon than Sunday 11am. Record findings here once known; nothing below this line is
+independently verified yet.
 
-## Phases
+## Build order
 
-Build in order; each phase must hit its definition of done before the next starts.
+Base first. A loan that repays with no twist still wins a prize; an elegant twist on a broken base
+wins nothing.
 
-| # | Phase | DoD | Status |
-|---|---|---|---|
-| 0 | Env + lifecycle probe: connect, verify amendments, fund accounts, issue stablecoin, then create a throwaway vault with compressed dates and attempt each out-of-phase action | the three reject codes above are filled in and ticked, from real ledger responses | todo |
-| 1 | **Minimum bar** (see below) | all six steps run end to end on Devnet inside one demo window | todo |
-| 2 | Compliance coupling: `CredentialCreate` + `PermissionedDomainSet`, vault private | an uncredentialed `VaultDeposit` **fails**; seam entry written | todo |
-| 3 | Secondary market: share MPT on order book (XLS-82) + AMM pool vs the stablecoin | a share MPT moves between two test accounts via a real ledger tx, not a mock | todo |
-| 4 | Early close-out: full-payoff `LoanPay` | payoff applies `CloseInterestRate`/`ClosePaymentFee` and closes the loan | todo |
+1. **Phase 0 — probe:** connect to the Custom Hackathon Devnet, confirm SingleAssetVault +
+   LendingProtocol (V1) + Credentials + PermissionedDomains + TokenEscrow are actually enabled, fund
+   accounts (issuer, manager/broker, SME/borrower, 2+ investors, insurer), issue the demo stablecoin.
+2. **Phase 1 — minimum bar:** reserve → deposit → loan → repayment → withdrawal, plus one rejected
+   transaction from a protocol guardrail. Nothing else is touched until this runs end to end.
+3. **Phase 2 — the gate:** `CredentialCreate` + `PermissionedDomainSet`, vault gated. An uncredentialed
+   `VaultDeposit`/`LoanSet` must visibly fail.
+4. **Phase 3 — the twist, fallback assumed:** credit insurance via TokenEscrow. If TokenEscrow isn't
+   actually available on the Custom Hackathon Devnet, present it as a mock and turn the wall itself
+   into the written contribution — the finding is worth almost as much as the implementation.
 
-### Phase 1 — minimum bar, verbatim
+**Running friction log, continuously, not reconstructed Sunday morning:** every unexpected error,
+unclear message, and doc/behavior mismatch goes into a friction log the moment it happens, with repro
+steps. This is 40% of the grade.
 
-1. Create a closed-ended vault, dates compressed to the event.
-2. Deposit capital during the Subscription phase.
-3. In Investment, originate and fund a loan whose final payment falls before `RedemptionDate`.
-4. In Redemption, withdraw capital plus accrued yield.
-5. Show a rejected `VaultDeposit` **and** `VaultWithdraw` during Investment.
-6. Show a rejected `LoanSet` during Redemption.
+## Demo script
 
-Steps 5 and 6 are demo output, not just tests: print the transaction, the phase, and the actual
-engine result code. Withdrawn amount in step 4 must visibly exceed the deposit — that spread is the
-whole thesis.
+1. An authority issues compliance credentials to the participants.
+2. Two investors deposit into the reserve, receive shares.
+3. The manager posts first-loss cover.
+4. An SME borrows against its invoice; funds move immediately.
+5. An investor buys protection from the insurer.
+6. The SME repays an installment; share value rises.
+7. **Break it on purpose** — over-withdraw past available liquidity: protocol refuses.
+8. An uncredentialed SME tries to join: refused.
+9. Trigger a real default: the manager's cushion absorbs the shock first, the protection releases,
+   investors see exactly what was lost and what was covered.
+10. Investors withdraw capital plus yield.
 
-Phases 5–6 (debt novation or wrapped debt token; pooled vault, PermissionedDEX, TokenEscrow) are
-**deferred — not in scope until explicitly chosen.** Designs are in `docs/SPEC.md` §5.3.
+**Live dashboard** (share price, unrealized loss, cushion level, updating during the default trigger)
+is worth pursuing for the demo's sake even though it adds no ledger-technical value — it is likely
+the single best use of the 10%-weighted presentation score.
 
-Update the Status column and the reject-code table as work lands.
+## Pitch (4 minutes)
+
+| Time | Content |
+|---|---|
+| 0:00–0:30 | The problem: the SME waiting 90 days, market size |
+| 0:30–1:00 | The four roles, the first-loss cushion |
+| 1:00–3:00 | Live demo: full cycle, then the default with the dashboard |
+| 3:00–3:30 | The credit-insurance wall and our proposal |
+| 3:30–4:00 | Two more major friction points and proposed fixes |
+
+Credit insurance gets ~30 seconds on stage; its weight is in the written report, not the pitch.
+**Record a backup video** — devnets can reset without warning, and a live crash at 2pm costs more
+than the 20 minutes it takes to film a fallback.
+
+## Deliverables
+
+- Public repo with README (project, setup, track, environment, library version, every XLS-65/66
+  transaction used)
+- Links to verified on-ledger transactions
+- Slide deck, 10 slides max
+- Feedback report, 3 pages max, at repo root
+- Completed developer-experience form
+- DevEx capture hook installed on every machine (already set up for this session: `/xrpl-status`)
+
+**Bonus contributions to aim for:** the drawdown-step documentation PR (simplest available fix), and
+a reusable code snippet for the two-party `LoanSet` signature flow — the single most predictable time
+sink for every team at this event.
+
+## Risks and fallbacks
+
+| Risk | Fallback |
+|---|---|
+| TokenEscrow not enabled on this devnet | Insurance becomes a mock; the finding goes in the report |
+| Credentials not available | Vault stays open; document the absence as a missing primitive |
+| Devnet resets or is unstable | Save keys/provisioning scripts immediately; backup video ready |
+| Two-party `LoanSet` signature blocks the team | Give it a dedicated slot early Saturday, not Sunday morning |
+| The twist eats the base's time | Hard freeze: nothing new until the full base cycle runs |
 
 ## Rules
 
-- Pull XLS-65/66 specs fresh from `XRPLF/XRPL-Standards@master` at build time — both are `status:
-  Draft` and get patched, and as shown above the ledger is already ahead of them. When the two
-  disagree, **the ledger wins**; record the divergence in `docs/SEAMS.md`.
-- Take the early-close interest formula from XLS-66 Appendix A-3; never hardcode a guessed formula.
-- Check every transaction result for `tesSUCCESS` and surface the raw engine result code on failure.
-  For these new tx types the code is the fastest debugging signal — never swallow it.
-- Amounts: respect vault `Scale` and MPT precision. Never do float math on ledger amounts.
-- **Do not build:** Hooks/WASM contracts, cross-chain anything, an on-chain collateral liquidation
-  engine (XLS-66 is intentionally uncollateralized / off-chain-underwritten).
-- **Do not overstate debt trading.** Early repayment ≠ third-party debt purchase. Only claim debt
-  trading if a `docs/SPEC.md` §5.3 approach is actually implemented.
+- Do not build an on-chain trigger for the escrow release — there isn't one. Use a named, documented
+  trusted party (the manager, or an explicit "referee" role) and say so plainly in the report; never
+  imply trustlessness the protocol doesn't provide.
+- Do not overclaim the insurance token as a full secondary debt market — XLS-66 has no `LoanTransfer`;
+  say precisely what is and isn't transferable.
+- Check every transaction result for `tesSUCCESS` and surface the raw engine result code on failure —
+  for these newer tx types the code is the fastest debugging signal.
+- Amounts: respect vault `Scale` and MPT precision; never do float math on ledger amounts.
+- Pull XLS-65/66 specs fresh from `XRPLF/XRPL-Standards@master` at build time; both are still
+  `status: Draft`. When the ledger and the spec disagree, the ledger wins — log the divergence.
