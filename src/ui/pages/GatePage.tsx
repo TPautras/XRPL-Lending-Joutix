@@ -1,11 +1,14 @@
+import type { SubmittableTransaction } from 'xrpl'
 import { LedgerEntry, type Client } from 'xrpl'
 import { NeedsDemo, Panel, SectionHeading } from '../components/Panel'
 import { AddressLink, ResultPill, TxLink } from '../components/TxLink'
 import { useAppState } from '../lib/appState'
 import { useLedgerQuery } from '../lib/ledger'
 import { eur, isoToDateTime } from '../lib/format'
+import { useWalletSubmit } from '../lib/walletActions'
 import { GATE_SUBJECT, GATE_VAULT, RECORDED_GATE, RECORDED_RUN_DATE, type GateRow } from '../lib/evidence'
 import { hrefFor } from '../lib/router'
+import { useWallet } from '../wallet/WalletContext'
 
 /** Must match `flows/credentials.ts credentialType()` — hex of the ASCII type, uppercase. */
 const DEFAULT_CREDENTIAL_TYPE = Array.from('TRUSTFLOW_KYC')
@@ -229,6 +232,102 @@ function MatrixPanel() {
 }
 
 /**
+ * `CredentialAccept` needs only the subject's own signature — the one gate-side action a
+ * connected wallet can take directly, unlike `CredentialCreate`/`CredentialDelete`, which
+ * are the authority's alone and stay in `flows/credentials.ts`.
+ */
+function CredentialActionPanel() {
+  const { state } = useAppState()
+  const { account, isConnected } = useWallet()
+  const { pending, error, clearError, send } = useWalletSubmit()
+
+  const accounts = state?.accounts
+  const authority = accounts?.authority
+  const credentialType = state?.credentialType ?? DEFAULT_CREDENTIAL_TYPE
+  const address = account?.address ?? null
+
+  const { data: status } = useLedgerQuery<CredentialState>(
+    !address || !authority
+      ? null
+      : async (client) => {
+          const mine = await credentialObjects(client, address).catch(() => [])
+          const own = mine.find((o) => o.Issuer === authority && o.CredentialType === credentialType)
+          if (own) return isAccepted(own) ? 'accepted' : 'issued, not accepted'
+          const issued = await credentialObjects(client, authority).catch(() => [])
+          const theirs = issued.find((o) => o.Subject === address && o.CredentialType === credentialType)
+          if (!theirs) return 'missing'
+          return isAccepted(theirs) ? 'accepted' : 'issued, not accepted'
+        },
+    [address, authority, credentialType],
+  )
+
+  if (!isConnected) {
+    return (
+      <Panel title="Accept your own credential" tone="off">
+        <p className="muted">
+          Connect a wallet to check whether the authority has issued you a credential, and accept
+          it — the one gate-side action that needs only your own signature.
+        </p>
+      </Panel>
+    )
+  }
+
+  if (!authority) {
+    return (
+      <Panel title="Accept your own credential" tone="off">
+        <NeedsDemo what="No authority address on record yet" command="npm run demo setup" />
+      </Panel>
+    )
+  }
+
+  const accept = () => {
+    if (!address) return
+    void send(
+      {
+        TransactionType: 'CredentialAccept',
+        Account: address,
+        Issuer: authority,
+        CredentialType: credentialType,
+      } as SubmittableTransaction,
+      'accept credential',
+    )
+  }
+
+  return (
+    <Panel
+      title="Accept your own credential"
+      tone={status === 'accepted' ? 'on' : status === 'issued, not accepted' ? 'warn' : 'off'}
+      aside={<AddressLink address={address ?? ''} />}
+    >
+      <p>
+        Credential state: <strong>{status ?? 'checking…'}</strong>
+      </p>
+      {status === 'issued, not accepted' && (
+        <div className="form-actions">
+          <button type="button" className="btn btn-primary" disabled={pending !== null} onClick={accept}>
+            {pending ? 'Waiting for your wallet…' : 'Accept credential'}
+          </button>
+        </div>
+      )}
+      {status === 'missing' && (
+        <p className="muted small">
+          No credential has been issued to this account yet — that is the authority's action
+          (<code>CredentialCreate</code>), not something this wallet can do for itself.
+        </p>
+      )}
+      {error && (
+        <div className="panel panel-error">
+          <p>{error}</p>
+          <button type="button" className="btn btn-ghost" onClick={clearError}>
+            Dismiss
+          </button>
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+/**
  * Pitch 3:30–4:00 — the "Loaded" flavour on screen. Two things have to land here: the
  * four-state credential walk, and the fact that withdrawal is deliberately never gated.
  */
@@ -240,6 +339,7 @@ export function GatePage() {
       </SectionHeading>
 
       <RolesPanel />
+      <CredentialActionPanel />
       <MatrixPanel />
 
       <div className="grid grid-2">

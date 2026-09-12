@@ -25,6 +25,16 @@ export async function requestFaucetAccount(): Promise<FaucetAccount> {
   if (!response.ok) {
     throw new Error(`Faucet request failed: ${response.status} ${await response.text()}`)
   }
-  const body = (await response.json()) as { account: { address: string; secret: string }; balance: number }
-  return { address: body.account.address, secret: body.account.secret, balance: body.balance }
+  // Two known response shapes: this hackathon devnet's faucet nests `account.secret`, while
+  // the public rippletest.net faucet puts the seed top-level as `seed` and never sets
+  // `account.secret` at all — read whichever is present instead of assuming one shape.
+  const body = (await response.json()) as {
+    account: { address: string; secret?: string }
+    seed?: string
+    balance?: number
+    amount?: number
+  }
+  const secret = body.account.secret ?? body.seed
+  if (!secret) throw new Error(`Faucet response had no secret/seed: ${JSON.stringify(body)}`)
+  return { address: body.account.address, secret, balance: body.balance ?? body.amount ?? 0 }
 }
