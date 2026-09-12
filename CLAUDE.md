@@ -55,8 +55,13 @@ A closed-ended vault has two UInt32 Ripple-epoch dates that cut its life into th
   `CredentialCreate`, `PermissionedDomainSet`, `VaultClawback`. Do not bump without re-checking
   those types *and* the date-field gap above.
 - Run a protocol script: `npx tsx src/protocol/<name>.ts`. UI: `npm run dev`.
-- Repo is spec-only so far. Scaffold Vite + `tsx` on the first implementation task; keep
-  `package.json` scripts to `dev`, `build`, and per-flow `tsx` invocations.
+- Vite + React 19 is scaffolded; `package.json` scripts are `dev`, `build`, `preview`,
+  `typecheck`, plus per-flow `tsx` invocations.
+- Wallet connection uses `xrpl-connect@0.8.2` (XRPL Commons), pinned exact. It ships **no type
+  declarations** — `src/ui/wallet/xrpl-connect.d.ts` is hand-written from the bundle's export
+  list and must be re-checked on any upgrade. Do **not** switch to
+  `@xrpl-commons/xrpl-connect-react`: it peer-requires `xrpl ^3 || ^4`, which conflicts with the
+  `xrpl@5.2.0` pin above. See `docs/SEAMS.md`.
 
 ## Environment
 
