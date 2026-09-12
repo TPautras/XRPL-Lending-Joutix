@@ -44,8 +44,10 @@ import { Trend } from './Trend'
  */
 function ReservePanel({ vault, history }: { vault: VaultView | null; history: Sample[] }) {
   if (!vault) {
+    // Same span as the populated panel: dropping it here left the third grid column empty
+    // and the row visibly ragged on a fresh clone or after a devnet reset.
     return (
-      <Panel title="Reserve" tone="off">
+      <Panel title="Reserve" tone="off" className="lg:col-span-2">
         <NeedsDemo what="The vault does not exist yet" command="npm run demo setup" />
       </Panel>
     )
@@ -111,7 +113,15 @@ function LossPanel({
   loans: Record<'A' | 'B', LoanView | null>
   history: Sample[]
 }) {
-  if (!vault) return null
+  if (!vault) {
+    // Returning null here punched a hole in the two-column row rather than reserving the
+    // slot — the cushion ended up alone against an empty half.
+    return (
+      <Panel title="Unrealized loss" tone="off">
+        <NeedsDemo what="No vault to report a loss against" command="npm run demo setup" />
+      </Panel>
+    )
+  }
   const hasLoss = Number(vault.lossUnrealized) > 0
   const formatted = eur(vault.lossUnrealized, vault.assetScale)
   const defaulted = (['A', 'B'] as const).filter((slot) => loans[slot]?.status === 'defaulted')
@@ -698,7 +708,7 @@ export function Dashboard() {
         <ProtectionPanel protection={protection} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid items-start gap-4 lg:grid-cols-2">
         <LossPanel vault={view.vault} loans={view.loans} history={history} />
         <CushionPanel broker={view.broker} history={history} onPostCover={postCover} busy={busy} />
       </div>

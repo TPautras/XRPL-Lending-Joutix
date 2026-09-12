@@ -1,15 +1,10 @@
-import type { ReactNode } from 'react'
-import { Chip, Panel, SectionHeading } from '../components/Panel'
+import { Chip, Panel, Rubric, SectionHeading } from '../components/Panel'
 import { TxLink } from '../components/TxLink'
 import { FINDINGS, type Finding } from '../lib/evidence'
 import { hrefFor } from '../lib/router'
 
 const SEVERITY_TONE = { high: 'err', medium: 'warn', low: 'off' } as const
 
-/** The small caps rubric a finding card repeats three times. */
-function Label({ children }: { children: ReactNode }) {
-  return <h3 className="text-muted-foreground mt-5 mb-1 text-xs font-semibold tracking-[0.06em] uppercase">{children}</h3>
-}
 
 function FindingCard({ finding }: { finding: Finding }) {
   return (
@@ -29,12 +24,12 @@ function FindingCard({ finding }: { finding: Finding }) {
         </p>
       ))}
 
-      <Label>Repro</Label>
+      <Rubric>Repro</Rubric>
       <p className="bg-muted border-border mt-1 rounded-md border px-3 py-2">
         <code>{finding.repro}</code>
       </p>
 
-      <Label>On-ledger evidence</Label>
+      <Rubric>On-ledger evidence</Rubric>
       <ul className="text-muted-foreground m-0 list-disc pl-5 text-[13px]">
         {finding.hashes.map((entry) => (
           <li key={entry.hash} className="mb-1.5">
@@ -43,7 +38,7 @@ function FindingCard({ finding }: { finding: Finding }) {
         ))}
       </ul>
 
-      <Label>Proposed fix</Label>
+      <Rubric>Proposed fix</Rubric>
       <p className="mt-1 text-sm">{finding.fix}</p>
 
       <p className="text-muted-foreground mt-3 text-[13px]">{finding.refs.join(' · ')}</p>

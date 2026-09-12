@@ -195,8 +195,9 @@ export function MarketPage() {
         sub={
           <>
             Anyone with a wallet on this devnet can sell default protection, buy it, and settle
-            it — with their own XRP, from this page. The rest of TrustFlow signs nothing in the
-            browser; this screen is the exception, and the reason is at the bottom.
+            it — with their own XRP, from this page. No credential is needed and none is checked:
+            an escrow sits outside the vault’s permissioned domain entirely. What that costs, once
+            strangers’ money is behind it, is at the bottom.
           </>
         }
       >

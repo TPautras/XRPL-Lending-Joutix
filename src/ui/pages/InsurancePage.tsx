@@ -1,4 +1,4 @@
-import { Chip, NeedsDemo, Panel, SectionHeading } from '../components/Panel'
+import { Chip, NeedsDemo, Panel, Rubric, SectionHeading } from '../components/Panel'
 import { Field, Fields, Metric } from '../components/Figures'
 import { AddressLink, TxLink } from '../components/TxLink'
 import { useAppState } from '../lib/appState'
@@ -186,11 +186,13 @@ export function InsurancePage() {
       <Panel title="The wall — and why it is the best finding here" tone="err">
         <p className="mb-3 text-[15px]">{wall.claim}</p>
         {wall.detail.map((paragraph) => (
-          <p key={paragraph.slice(0, 24)}>{paragraph}</p>
+          <p key={paragraph.slice(0, 24)} className="mb-2.5 text-sm">
+            {paragraph}
+          </p>
         ))}
-        <h3>What is missing</h3>
-        <p>{wall.fix}</p>
-        <h3>Evidence</h3>
+        <Rubric>What is missing</Rubric>
+        <p className="text-sm">{wall.fix}</p>
+        <Rubric>Evidence</Rubric>
         <ul className="text-muted-foreground m-0 list-disc pl-5 text-[13px]">
           {wall.hashes.map((entry) => (
             <li key={entry.hash}>

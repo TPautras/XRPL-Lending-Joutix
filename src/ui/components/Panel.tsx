@@ -70,6 +70,17 @@ export function SectionHeading({ children, sub }: { children: ReactNode; sub?: R
   )
 }
 
+/**
+ * The small-caps section label inside a panel. Was a bare `<h3>` styled globally by the
+ * pre-Tailwind stylesheet; that rule is gone, so the styling lives here instead of being
+ * re-typed (or, as happened, silently lost) at each call site.
+ */
+export function Rubric({ children }: { children: ReactNode }) {
+  return (
+    <h3 className="text-muted-foreground mt-5 mb-1 text-xs font-semibold tracking-[0.06em] uppercase">{children}</h3>
+  )
+}
+
 /** A pill of context that sits in a panel's `aside` slot. */
 export function Chip({ children, className }: { children: ReactNode; className?: string }) {
   return (

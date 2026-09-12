@@ -106,7 +106,7 @@ export function ExplorerPage() {
                       className={resultKind(entry.result, entry.type) === 'failure' ? 'bg-err-soft' : undefined}
                     >
                       <TableCell className="whitespace-nowrap">{isoToDateTime(entry.ts)}</TableCell>
-                      <TableCell>
+                      <TableCell className="whitespace-normal">
                         <code>{entry.type}</code>
                         {deliberateNote(entry.type, entry.result) && (
                           <span className="text-muted-foreground text-xs">
@@ -160,7 +160,7 @@ export function ExplorerPage() {
                     <TableCell>
                       <code>{entry.step}</code>
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="whitespace-normal">
                       {entry.type}
                       {entry.deliberate && <span className="text-muted-foreground text-xs"> — {entry.deliberate}</span>}
                     </TableCell>

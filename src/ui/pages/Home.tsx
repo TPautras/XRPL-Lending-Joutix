@@ -141,15 +141,18 @@ export function Home() {
               <TableRow>
                 <TableHead>Role</TableHead>
                 <TableHead>Does</TableHead>
-                <TableHead>On-ledger</TableHead>
+                <TableHead className="whitespace-normal">On-ledger</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {ROLES.map((row) => (
                 <TableRow key={row.role}>
                   <TableCell className="font-semibold">{row.role}</TableCell>
-                  <TableCell>{row.does}</TableCell>
-                  <TableCell>
+                  <TableCell className="whitespace-normal">{row.does}</TableCell>
+                  {/* shadcn's TableCell is `whitespace-nowrap` by default, which clipped this
+                      column off the right edge behind a scrollbar — and nobody scrolls a table
+                      that is being projected. */}
+                  <TableCell className="whitespace-normal">
                     <code>{row.primitive}</code>
                   </TableCell>
                 </TableRow>

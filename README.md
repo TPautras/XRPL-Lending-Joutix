@@ -82,6 +82,7 @@ Other commands:
 | `npm run typecheck` | `tsc` over both the UI and the protocol scripts. |
 | `npm run smoke` | Mounts the whole app in jsdom against the live devnet and walks all seven routes, failing on a render crash, a console error, a screen that came back empty, or a dashboard whose three chart series did not draw real coordinates. There is no browser in this loop, and typecheck alone does not notice a component that throws on real ledger data. |
 | `npm run smoke:live` | The above plus one real transaction: posts 3 units of the manager's own cover and asserts the dashboard's cushion figure and chart geometry follow it. This is the claim a static render cannot make — that a ledger change *arrives* on screen. Spends a transaction; `CoverAvailable` only goes up. |
+| `npm run visual` | Drives the system Firefox over WebDriver BiDi (no browser download), screenshots every route full-page into `screenshots/`, and **fails** if any element is wider than its container. Needs a dev server on `:5199` (`npm run dev -- --port 5199`), or set `BASE`. This is the pass that catches what neither typecheck nor jsdom can: a table clipped behind a scrollbar nobody will drag on a projector, a chart axis running −1 to 3 on a flat series, a grid column left empty. |
 
 ---
 

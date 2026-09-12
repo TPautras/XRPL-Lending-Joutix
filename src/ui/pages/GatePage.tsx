@@ -224,7 +224,7 @@ function MatrixPanel() {
             {rows.map((row, index) => (
               <TableRow key={`${row.state}-${row.action}-${index}`}>
                 <TableCell className="font-semibold">{row.state}</TableCell>
-                <TableCell>
+                <TableCell className="whitespace-normal">
                   <code>{row.action}</code>
                   {row.note && <span className="text-muted-foreground text-xs"> — {row.note}</span>}
                 </TableCell>
