@@ -38,10 +38,10 @@ const MAX_EVENTS = 24
 const MAX_BACKOFF_MS = 15_000
 
 /**
- * One WebSocket for the whole app, read-only by construction: this provider and the pages
- * under it only ever call `client.request()`. Nothing here signs or submits — the browser
- * holds no key (CLAUDE.md "The webapp"), every TrustFlow transaction is signed by
- * `src/protocol/` with seeds from `.env`.
+ * One WebSocket for the whole app, and a read-only one: this provider only ever calls
+ * `client.request()`. Pages that submit do so through `lib/walletTx.ts`, which borrows this
+ * same client to autofill and wait for validation but does the signing in the connected
+ * wallet — no key ever reaches this provider.
  *
  * Two reasons it lives above the router rather than inside a page: switching screens
  * mid-pitch must not drop the subscription and re-handshake, and a devnet that hiccups

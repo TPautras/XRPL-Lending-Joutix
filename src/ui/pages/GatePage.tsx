@@ -1,7 +1,13 @@
 import type { SubmittableTransaction } from 'xrpl'
 import { LedgerEntry, type Client } from 'xrpl'
-import { NeedsDemo, Panel, SectionHeading } from '../components/Panel'
+import { Chip, NeedsDemo, Panel, SectionHeading } from '../components/Panel'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { AddressLink, ResultPill, TxLink } from '../components/TxLink'
+import { BadgeCheck } from 'lucide-react'
 import { useAppState } from '../lib/appState'
 import { useLedgerQuery } from '../lib/ledger'
 import { eur, isoToDateTime } from '../lib/format'
@@ -105,11 +111,13 @@ async function readRoles(
   )
 }
 
-const CREDENTIAL_TONE: Record<CredentialState, string> = {
-  accepted: 'pill-success',
-  'issued, not accepted': 'pill-expected',
-  missing: 'pill-failure',
-}
+/** Three states, three badge variants — and the badge always carries the words too, so the
+ * colour is reinforcement rather than the only channel. */
+const CREDENTIAL_TONE = {
+  accepted: 'ok',
+  'issued, not accepted': 'warn',
+  missing: 'err',
+} as const satisfies Record<CredentialState, 'ok' | 'warn' | 'err'>
 
 function RolesPanel() {
   const { state } = useAppState()
@@ -141,39 +149,52 @@ function RolesPanel() {
   return (
     <Panel
       title="Participants"
-      aside={<span className="chip">credential type <code>TRUSTFLOW_KYC</code></span>}
+      aside={
+        <Chip>
+          credential type <code className="text-foreground">TRUSTFLOW_KYC</code>
+        </Chip>
+      }
     >
-      <div className="table-scroll">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Role</th>
-              <th>Account</th>
-              <th>Credential</th>
-              <th className="num">TFEUR</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Role</TableHead>
+              <TableHead>Account</TableHead>
+              <TableHead>Credential</TableHead>
+              <TableHead className="text-right">TFEUR</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {/* Eight skeleton rows rather than an empty table: a panel that renders blank
+                while ~17 requests are in flight reads as broken on a projector. */}
+            {!data &&
+              Object.keys(ROLE_LABEL).map((role) => (
+                <TableRow key={role}>
+                  <TableCell colSpan={4}>
+                    <Skeleton className="h-5 w-full" />
+                  </TableCell>
+                </TableRow>
+              ))}
             {(data ?? []).map((row) => (
-              <tr key={row.role}>
-                <th scope="row">{ROLE_LABEL[row.role] ?? row.role}</th>
-                <td>
+              <TableRow key={row.role}>
+                <TableCell className="font-semibold">{ROLE_LABEL[row.role] ?? row.role}</TableCell>
+                <TableCell>
                   <AddressLink address={row.address} />
-                </td>
-                <td>
-                  <span className={`pill ${CREDENTIAL_TONE[row.credential]}`}>{row.credential}</span>
-                </td>
-                <td className="num">{row.balance === null ? '—' : eur(row.balance)}</td>
-              </tr>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={CREDENTIAL_TONE[row.credential]}>{row.credential}</Badge>
+                </TableCell>
+                <TableCell className="text-right">{row.balance === null ? '—' : eur(row.balance)}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
-      {!data && <p className="muted small">Reading credential objects…</p>}
-      {error && <p className="muted small">Last read failed: {error}</p>}
-      <p className="muted small">
-        Read live with <code>account_objects type=credential</code> against both the subject’s and
-        the issuer’s owner directory — an unaccepted credential lives in the issuer’s.
+      {error && <p className="text-muted-foreground mt-2 text-[13px]">Last read failed: {error}</p>}
+      <p className="text-muted-foreground mt-3 text-[13px]">
+        Read live with <code className="text-foreground">account_objects type=credential</code> against both the
+        subject’s and the issuer’s owner directory — an unaccepted credential lives in the issuer’s.
       </p>
     </Panel>
   )
@@ -187,45 +208,41 @@ function MatrixPanel() {
   return (
     <Panel
       title="What the ledger answered"
-      aside={
-        <span className="chip">
-          {live ? `live · ${isoToDateTime(live.ts)}` : `recorded run · ${RECORDED_RUN_DATE}`}
-        </span>
-      }
+      aside={<Chip>{live ? `live · ${isoToDateTime(live.ts)}` : `recorded run · ${RECORDED_RUN_DATE}`}</Chip>}
     >
-      <div className="table-scroll">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Credential state</th>
-              <th>Transaction</th>
-              <th>Result</th>
-              <th>Hash</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Credential state</TableHead>
+              <TableHead>Transaction</TableHead>
+              <TableHead>Result</TableHead>
+              <TableHead>Hash</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((row, index) => (
-              <tr key={`${row.state}-${row.action}-${index}`}>
-                <th scope="row">{row.state}</th>
-                <td>
+              <TableRow key={`${row.state}-${row.action}-${index}`}>
+                <TableCell className="font-semibold">{row.state}</TableCell>
+                <TableCell>
                   <code>{row.action}</code>
-                  {row.note && <span className="muted small"> — {row.note}</span>}
-                </td>
-                <td>
+                  {row.note && <span className="text-muted-foreground text-xs"> — {row.note}</span>}
+                </TableCell>
+                <TableCell>
                   <ResultPill result={row.result} type={row.action} />
-                </td>
-                <td>
+                </TableCell>
+                <TableCell>
                   <TxLink hash={row.hash} />
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
-      <p className="muted small">
+      <p className="text-muted-foreground mt-3 text-[13px]">
         One account (<AddressLink address={GATE_SUBJECT} />) walked through every credential state
         against the private vault <code>{GATE_VAULT.slice(0, 12)}…{GATE_VAULT.slice(-6)}</code>.
-        Reproduce with <code>npm run demo gate</code> — it is idempotent.
+        Reproduce with <code className="text-foreground">npm run demo gate</code> — it is idempotent.
       </p>
     </Panel>
   )
@@ -264,9 +281,9 @@ function CredentialActionPanel() {
   if (!isConnected) {
     return (
       <Panel title="Accept your own credential" tone="off">
-        <p className="muted">
-          Connect a wallet to check whether the authority has issued you a credential, and accept
-          it — the one gate-side action that needs only your own signature.
+        <p className="text-muted-foreground text-sm">
+          Connect a wallet to check whether the authority has issued you a credential, and accept it — the one gate-side
+          action that needs only your own signature.
         </p>
       </Panel>
     )
@@ -299,29 +316,36 @@ function CredentialActionPanel() {
       tone={status === 'accepted' ? 'on' : status === 'issued, not accepted' ? 'warn' : 'off'}
       aside={<AddressLink address={address ?? ''} />}
     >
-      <p>
-        Credential state: <strong>{status ?? 'checking…'}</strong>
+      <p className="text-sm">
+        Credential state:{' '}
+        {status ? (
+          <Badge variant={CREDENTIAL_TONE[status]}>{status}</Badge>
+        ) : (
+          <span className="text-muted-foreground">checking…</span>
+        )}
       </p>
       {status === 'issued, not accepted' && (
-        <div className="form-actions">
-          <button type="button" className="btn btn-primary" disabled={pending !== null} onClick={accept}>
-            {pending ? 'Waiting for your wallet…' : 'Accept credential'}
-          </button>
+        <div className="mt-3.5">
+          <Button type="button" disabled={pending !== null} onClick={accept}>
+            <BadgeCheck /> {pending ? 'Waiting for your wallet…' : 'Accept credential'}
+          </Button>
         </div>
       )}
       {status === 'missing' && (
-        <p className="muted small">
-          No credential has been issued to this account yet — that is the authority's action
-          (<code>CredentialCreate</code>), not something this wallet can do for itself.
+        <p className="text-muted-foreground mt-2 text-[13px]">
+          No credential has been issued to this account yet — that is the authority's action (
+          <code className="text-foreground">CredentialCreate</code>), not something this wallet can do for itself.
         </p>
       )}
       {error && (
-        <div className="panel panel-error">
-          <p>{error}</p>
-          <button type="button" className="btn btn-ghost" onClick={clearError}>
-            Dismiss
-          </button>
-        </div>
+        <Alert className="border-err/40 mt-3.5" role="alert" aria-live="polite">
+          <AlertDescription>
+            <p className="wrap-anywhere">{error}</p>
+            <Button type="button" variant="ghost" size="sm" onClick={clearError}>
+              Dismiss
+            </Button>
+          </AlertDescription>
+        </Alert>
       )}
     </Panel>
   )
@@ -333,7 +357,7 @@ function CredentialActionPanel() {
  */
 export function GatePage() {
   return (
-    <div className="page">
+    <div className="flex flex-col gap-4">
       <SectionHeading sub="Every participant needs a Credential accepted by a PermissionedDomain before they can deposit, borrow or hold shares">
         The gate
       </SectionHeading>
@@ -342,14 +366,14 @@ export function GatePage() {
       <CredentialActionPanel />
       <MatrixPanel />
 
-      <div className="grid grid-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="An unaccepted credential grants nothing" tone="warn">
           <p>
             The <code>Credential</code> object exists on the ledger the moment the issuer creates
             it, and its holder is still refused — exactly as if it did not exist.{' '}
             <code>CredentialAccept</code> is load-bearing, not bookkeeping.
           </p>
-          <p className="muted small">
+          <p className="text-muted-foreground mt-2.5 text-[13px]">
             Skipping it builds a gate that silently refuses everyone. XLS-70 §3: “a credential
             should not be considered valid until it has been accepted.”
           </p>
@@ -361,7 +385,7 @@ export function GatePage() {
             way <strong>in</strong> (<code>tecNO_AUTH</code>) and served on the way{' '}
             <strong>out</strong> (<code>tesSUCCESS</code>).
           </p>
-          <p className="muted small">
+          <p className="text-muted-foreground mt-2.5 text-[13px]">
             This is a ledger guarantee — <code>VaultWithdraw</code> does not consult the
             permissioned domain (XLS-65 §7) — not our leniency. An investor whose credential
             expires must never be locked out of their own funds.
@@ -385,7 +409,7 @@ export function GatePage() {
           configured, an uncredentialed borrower is stopped by the broker’s off-ledger discretion
           alone, not by the protocol.
         </p>
-        <p className="muted small">
+        <p className="text-muted-foreground mt-2.5 text-[13px]">
           Full write-up, repro and proposed fix on <a href={hrefFor('/findings')}>Findings</a> and in{' '}
           <code>FEEDBACK_REPORT.md §2</code>.
         </p>

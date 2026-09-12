@@ -14,7 +14,9 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "baseUrl": ".",
+    "paths": { "@/*": ["src/ui/*"] }
   },
   "include": ["src", "vite.config.ts"],
   "exclude": ["src/protocol"]

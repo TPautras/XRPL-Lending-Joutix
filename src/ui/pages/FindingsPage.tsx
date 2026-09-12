@@ -1,9 +1,15 @@
-import { Panel, SectionHeading } from '../components/Panel'
+import type { ReactNode } from 'react'
+import { Chip, Panel, SectionHeading } from '../components/Panel'
 import { TxLink } from '../components/TxLink'
 import { FINDINGS, type Finding } from '../lib/evidence'
 import { hrefFor } from '../lib/router'
 
 const SEVERITY_TONE = { high: 'err', medium: 'warn', low: 'off' } as const
+
+/** The small caps rubric a finding card repeats three times. */
+function Label({ children }: { children: ReactNode }) {
+  return <h3 className="text-muted-foreground mt-5 mb-1 text-xs font-semibold tracking-[0.06em] uppercase">{children}</h3>
+}
 
 function FindingCard({ finding }: { finding: Finding }) {
   return (
@@ -11,34 +17,36 @@ function FindingCard({ finding }: { finding: Finding }) {
       title={finding.title}
       tone={SEVERITY_TONE[finding.severity]}
       aside={
-        <span className="chip">
+        <Chip>
           {finding.category} · severity {finding.severity}
-        </span>
+        </Chip>
       }
     >
-      <p className="lede-sm">{finding.claim}</p>
+      <p className="mb-3 text-[15px]">{finding.claim}</p>
       {finding.detail.map((paragraph) => (
-        <p key={paragraph.slice(0, 24)}>{paragraph}</p>
+        <p key={paragraph.slice(0, 24)} className="mb-2.5 text-sm">
+          {paragraph}
+        </p>
       ))}
 
-      <h3>Repro</h3>
-      <p>
+      <Label>Repro</Label>
+      <p className="bg-muted border-border mt-1 rounded-md border px-3 py-2">
         <code>{finding.repro}</code>
       </p>
 
-      <h3>On-ledger evidence</h3>
-      <ul className="hash-list">
+      <Label>On-ledger evidence</Label>
+      <ul className="text-muted-foreground m-0 list-disc pl-5 text-[13px]">
         {finding.hashes.map((entry) => (
-          <li key={entry.hash}>
+          <li key={entry.hash} className="mb-1.5">
             {entry.label} — <TxLink hash={entry.hash} />
           </li>
         ))}
       </ul>
 
-      <h3>Proposed fix</h3>
-      <p>{finding.fix}</p>
+      <Label>Proposed fix</Label>
+      <p className="mt-1 text-sm">{finding.fix}</p>
 
-      <p className="muted small">{finding.refs.join(' · ')}</p>
+      <p className="text-muted-foreground mt-3 text-[13px]">{finding.refs.join(' · ')}</p>
     </Panel>
   )
 }
@@ -50,7 +58,7 @@ function FindingCard({ finding }: { finding: Finding }) {
  */
 export function FindingsPage() {
   return (
-    <div className="page">
+    <div className="flex flex-col gap-4">
       <SectionHeading
         sub={
           <>
@@ -68,7 +76,7 @@ export function FindingsPage() {
       ))}
 
       <Panel title="Also logged, with less weight" tone="off">
-        <ul className="steps">
+        <ul className="m-0 grid list-disc gap-2 pl-5 text-sm">
           <li>
             <strong>No separate drawdown step.</strong> <code>LoanSet</code> pays the borrower in the
             same transaction; the hackathon brief’s own minimum-bar wording still implies a separate
@@ -112,9 +120,11 @@ export function FindingsPage() {
         </ul>
       </Panel>
 
-      <p className="muted small">
+      <p className="text-muted-foreground text-[13px]">
         Every hash above resolves on the hackathon explorer — the full log is on{' '}
-        <a href={hrefFor('/explorer')}>Explorer</a>.
+        <a className="text-primary" href={hrefFor('/explorer')}>
+          Explorer
+        </a>.
       </p>
     </div>
   )

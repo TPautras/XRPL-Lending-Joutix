@@ -1,4 +1,5 @@
-import { NeedsDemo, Panel, SectionHeading } from '../components/Panel'
+import { Chip, NeedsDemo, Panel, SectionHeading } from '../components/Panel'
+import { Field, Fields, Metric } from '../components/Figures'
 import { AddressLink, TxLink } from '../components/TxLink'
 import { useAppState } from '../lib/appState'
 import { useLedger } from '../lib/ledger'
@@ -107,7 +108,7 @@ function EscrowDiagram({ referee }: { referee: string | null }) {
           <text x="540" y="196" className="dg-label">the fulfillment</text>
         </g>
       </svg>
-      <p className="muted small">
+      <p className="text-muted-foreground mt-2.5 text-[13px]">
         The trusted party is named, not implied: {referee ? <AddressLink address={referee} /> : 'the manager'}{' '}
         decides when the payout happens. The dashed edge is the part of this product the protocol
         does not provide.
@@ -126,7 +127,7 @@ function ProtectionState() {
     return (
       <Panel title="Protection contract" tone="off">
         <NeedsDemo what="No escrow sold yet" command="npm run demo prestage" />
-        {error && <p className="muted small">Last read failed: {error}</p>}
+        {error && <p className="text-muted-foreground mt-2.5 text-[13px]">Last read failed: {error}</p>}
       </Panel>
     )
   }
@@ -135,33 +136,28 @@ function ProtectionState() {
     <Panel
       title="Protection contract"
       tone={PHASE_TONE[view.phase]}
-      aside={<span className="chip">{view.onLedger ? 'escrow object present' : 'escrow object gone'}</span>}
+      aside={<Chip>{view.onLedger ? 'escrow object present' : 'escrow object gone'}</Chip>}
     >
-      <p className="metric">
-        <span className="metric-value">{eur(view.amount)}</span>
-        <span className="metric-label">{PHASE_LABEL[view.phase]}</span>
-      </p>
-      <dl className="fields fields-wide">
-        <dt>Insurer (Owner)</dt>
-        <dd>{view.owner ? <AddressLink address={view.owner} full /> : '—'}</dd>
-        <dt>Buyer (Destination)</dt>
-        <dd>{view.destination ? <AddressLink address={view.destination} full /> : '—'}</dd>
-        <dt>Condition</dt>
-        <dd>
+      <Metric value={eur(view.amount)} label={PHASE_LABEL[view.phase]} />
+      <Fields wide>
+        <Field label="Insurer (Owner)">{view.owner ? <AddressLink address={view.owner} full /> : '—'}</Field>
+        <Field label="Buyer (Destination)">
+          {view.destination ? <AddressLink address={view.destination} full /> : '—'}
+        </Field>
+        <Field label="Condition">
           <code title={view.condition ?? undefined}>{view.condition ? shortHash(view.condition, 16, 8) : '—'}</code>
-        </dd>
-        <dt>CancelAfter</dt>
-        <dd>
+        </Field>
+        <Field label="CancelAfter">
           {clockTime(view.cancelAfter)}{' '}
-          <span className="muted">{countdown(view.cancelAfter, ledgerTime)}</span>
-        </dd>
-      </dl>
-      <p className="muted small">
+          <span className="text-muted-foreground">{countdown(view.cancelAfter, ledgerTime)}</span>
+        </Field>
+      </Fields>
+      <p className="text-muted-foreground mt-2.5 text-[13px]">
         Two ways out and no third: the manager reveals the fulfillment (<code>EscrowFinish</code> →
         the buyer is paid), or <code>CancelAfter</code> passes and anyone can{' '}
         <code>EscrowCancel</code> it — the insurer reclaims the cover and keeps the premiums.
       </p>
-      {error && <p className="muted small">Last read failed: {error}</p>}
+      {error && <p className="text-muted-foreground mt-2.5 text-[13px]">Last read failed: {error}</p>}
     </Panel>
   )
 }
@@ -176,7 +172,7 @@ export function InsurancePage() {
   const wall = FINDINGS.find((finding) => finding.id === 'escrow-wall')!
 
   return (
-    <div className="page">
+    <div className="flex flex-col gap-4">
       <SectionHeading sub="An investor buys protection against one specific borrower’s default. The insurer locks the covered amount on-ledger; the buyer pays premiums.">
         Credit insurance
       </SectionHeading>
@@ -188,21 +184,21 @@ export function InsurancePage() {
       <ProtectionState />
 
       <Panel title="The wall — and why it is the best finding here" tone="err">
-        <p className="lede-sm">{wall.claim}</p>
+        <p className="mb-3 text-[15px]">{wall.claim}</p>
         {wall.detail.map((paragraph) => (
           <p key={paragraph.slice(0, 24)}>{paragraph}</p>
         ))}
         <h3>What is missing</h3>
         <p>{wall.fix}</p>
         <h3>Evidence</h3>
-        <ul className="hash-list">
+        <ul className="text-muted-foreground m-0 list-disc pl-5 text-[13px]">
           {wall.hashes.map((entry) => (
             <li key={entry.hash}>
               {entry.label} — <TxLink hash={entry.hash} />
             </li>
           ))}
         </ul>
-        <p className="muted small">
+        <p className="text-muted-foreground mt-2.5 text-[13px]">
           Repro: <code>{wall.repro}</code> · {wall.refs.join(' · ')}
         </p>
       </Panel>
@@ -215,7 +211,7 @@ export function InsurancePage() {
           <code>Loan</code> stays permanently tied to the Broker + Borrower pair that dual-signed
           it at creation.
         </p>
-        <p className="muted small">
+        <p className="text-muted-foreground mt-2.5 text-[13px]">
           So any loan-level secondary market — this insurance token included — is an off-protocol
           overlay wrapping the loan’s economics, not a native reassignment of the loan itself.
           <code> FEEDBACK_REPORT.md §4</code>.

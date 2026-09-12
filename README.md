@@ -78,7 +78,7 @@ Other commands:
 | `npm run demo referee` | Publishes the open protection market's conditions and reveals the fulfillment for any loan the ledger says has defaulted. Idempotent. |
 | `npm run demo full` | `setup` → `s1` → `s2` → `prestage` → `s3`…`s10` end to end, including the real wall-clock wait for Loan B to become defaultable. A rehearsal, not the stage run. |
 | `npm run demo reset` | Wipes `state/hackathon.json` only. Never touches the ledger — a fresh `setup` afterwards creates brand-new on-chain objects. |
-| `npm run dev` | The read-only webapp on `localhost:5173`. |
+| `npm run dev` | The webapp on `localhost:5173`. |
 | `npm run typecheck` | `tsc` over both the UI and the protocol scripts. |
 
 ---
@@ -228,13 +228,18 @@ the transaction log. Everything else is a live RPC query or the `ledger` subscri
 `NETWORK.wss`. If a page needs a fact in neither, the fix is to write it into the state file from
 the protocol scripts, not to add a server.
 
-**Every screen but one is read-only by construction, and that is worth saying on stage:** the
-browser holds no protocol key, `LoanSet` needs two signatures, and a visitor's wallet holds no
-`Credential` — so a deposit from it would land `tecNO_AUTH`, the gate working correctly but
-indistinguishable from a broken app. The `xrpl-connect` widget on Home shows a connected account
-and nothing else.
+**What the browser signs is decided by one question, and it is worth saying on stage:** does the
+transaction need anything beyond the connected account's own signature? `VaultDeposit`,
+`VaultWithdraw`, `LoanPay`, `LoanBrokerCoverDeposit`, `CredentialAccept` and the protection
+escrows do not — Dashboard, The Gate and Market submit all of them from a connected wallet
+through `lib/walletActions.ts`. `LoanSet` does: it is dual-signed by borrower *and* broker, and
+no single wallet holds both keys, so it stays scripted in `src/protocol/` — as do the authority's
+`CredentialCreate`/`CredentialDelete` and the manager's `LoanBrokerSet`, `LoanManage` and
+`VaultCreate`, each of which needs a key this app never asks a visitor for.
 
-The exception is `/market` — see below.
+A wallet with no accepted `Credential` still gets `tecNO_AUTH` from the private reserve's
+`VaultDeposit`. That is the gate working, and the screen shows the raw engine code as the
+deliberate result it is rather than as a bare failure.
 
 ### The open protection market (`/market`)
 
@@ -299,8 +304,9 @@ src/protocol/            everything that signs (Node, tsx)
                          broker, loan, insurance, rejections, gate, report, oracle
   lib/                   client, wallets, submit, MPT scaling, crypto-conditions, state I/O,
                          friction logging
-src/ui/                  the read-only webapp (React 19 + Vite)
-  pages/ dashboard/      the six screens
+src/ui/                  the webapp (React 19 + Vite + Tailwind v4 + shadcn/ui)
+  pages/ dashboard/      the seven screens
+  components/ui/         shadcn primitives (card, badge, button, table, …)
   lib/                   router, shared ledger socket, state polling, formatting, evidence
 state/hackathon.json     object IDs + tx log (gitignored) → mirrored to public/state.json
 docs/FRICTION.md         raw, timestamped friction log

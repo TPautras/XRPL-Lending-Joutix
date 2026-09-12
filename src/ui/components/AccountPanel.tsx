@@ -1,4 +1,8 @@
 import { useState } from 'react'
+import { Copy, ExternalLink, LogOut } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Panel } from './Panel'
+import { Field, Fields } from './Figures'
 import { useWallet } from '../wallet/WalletContext'
 import { NETWORK } from '../lib/network'
 
@@ -12,15 +16,11 @@ export function AccountPanel() {
 
   if (!account) {
     return (
-      <div className="panel panel-empty">
-        <p className="status status-off">
-          <span className="dot" /> No wallet connected
+      <Panel title="No wallet connected" tone="off">
+        <p className="text-muted-foreground text-sm">
+          Connect a Crossmark or GemWallet account on {NETWORK.name} to act as an issuer, broker, borrower or investor.
         </p>
-        <p className="muted">
-          Connect a Crossmark or GemWallet account on {NETWORK.name} to act as an issuer,
-          broker, borrower or investor.
-        </p>
-      </div>
+      </Panel>
     )
   }
 
@@ -42,55 +42,45 @@ export function AccountPanel() {
   }
 
   return (
-    <div className="panel">
-      <p className="status status-on">
-        <span className="dot" /> Wallet connected
-      </p>
-
-      <dl className="fields">
-        <dt>Address</dt>
-        <dd>
-          <code>{account.address}</code>
-          <button type="button" className="btn btn-ghost" onClick={copy}>
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        </dd>
-
-        <dt>Wallet</dt>
-        <dd>{account.walletName}</dd>
-
-        <dt>Network</dt>
-        <dd>
-          {account.networkName} <span className="muted">({account.networkId})</span>
+    <Panel title="Wallet connected" tone={wrongNetwork ? 'warn' : 'on'}>
+      <Fields>
+        <Field label="Address">
+          <code className="wrap-anywhere">{account.address}</code>
+          <Button type="button" variant="ghost" size="sm" onClick={copy}>
+            <Copy /> {copied ? 'Copied' : 'Copy'}
+          </Button>
+        </Field>
+        <Field label="Wallet">{account.walletName}</Field>
+        <Field label="Network" tone={wrongNetwork ? 'warn' : undefined}>
+          <span>
+            {account.networkName} <span className="text-muted-foreground">({account.networkId})</span>
+          </span>
           {wrongNetwork && (
-            <span className="warn">
+            <span className="text-warn text-[13px]">
               — switch to {NETWORK.name}; the vault and lending amendments are Devnet-only
             </span>
           )}
-        </dd>
-      </dl>
+        </Field>
+      </Fields>
 
       {isWalletConnect && (
-        <p className="warn warn-block">
-          WalletConnect sessions don&rsquo;t survive a reload — refreshing this page will
-          disconnect the wallet and you&rsquo;ll need to pair a new <code>wc:</code> URI. This
-          is a limitation of the connector, not this app.
+        <p className="border-warn/30 bg-warn-soft text-warn mt-4 rounded-lg border px-3 py-2.5 text-[13px]">
+          WalletConnect sessions don&rsquo;t survive a reload — refreshing this page will disconnect the wallet and
+          you&rsquo;ll need to pair a new <code className="text-foreground">wc:</code> URI. This is a limitation of the
+          connector, not this app.
         </p>
       )}
 
-      <div className="actions">
-        <a
-          className="btn btn-ghost"
-          href={explorerUrl(account.address)}
-          target="_blank"
-          rel="noreferrer"
-        >
-          View on explorer
-        </a>
-        <button type="button" className="btn btn-ghost" onClick={() => void disconnect()}>
-          Disconnect
-        </button>
+      <div className="mt-4 flex flex-wrap gap-2.5">
+        <Button asChild variant="outline" size="sm">
+          <a href={explorerUrl(account.address)} target="_blank" rel="noreferrer">
+            <ExternalLink /> View on explorer
+          </a>
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => void disconnect()}>
+          <LogOut /> Disconnect
+        </Button>
       </div>
-    </div>
+    </Panel>
   )
 }
