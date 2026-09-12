@@ -21,7 +21,7 @@ Full design rationale, the roles, and the build plan live in [`CLAUDE.md`](./CLA
 | 0 — probe | Confirm amendments live, fund accounts, issue the demo stablecoin | ✅ verified against the live devnet (`npm run probe`) |
 | 1 — minimum bar | Reserve → deposit → loan → repayment → withdrawal, plus one rejected guardrail tx | ✅ verified end to end, real tx hashes below |
 | 2 — the gate | Credential-gated vault; an uncredentialed account is refused | ✅ verified against the live devnet — `s8` and the full four-state proof (`npm run demo gate`), tx hashes below |
-| 3 — the twist | Credit insurance via TokenEscrow (`s5`, `s9`, `prestage`) | ⚙️ implemented in `flows/insurance.ts`, not yet exercised end to end |
+| 3 — the twist | Credit insurance via TokenEscrow (`s5`, `s9`, `prestage`) | ✅ verified end to end against the live devnet, tx hashes below |
 
 Two real bugs surfaced and were fixed while verifying Phase 1 — both are ledger/spec behavior, not
 typos, and are detailed in `docs/FRICTION.md` and `FEEDBACK_REPORT.md`:
@@ -79,6 +79,33 @@ The on-stage step `s8` is the short version of the same thing:
 | `s8` | `CredentialDelete` (investor's credential revoked) | `tesSUCCESS` | `C02CFE069D225C5E0554D8AB1B0680CFD0E089116FB404A641E4DA5D71337489` |
 | `s8` | `VaultDeposit` after revocation | `tecNO_AUTH` (expected) | `037C701A3B549B7D5EA7573E706B643E3C6DDF4FEDC06002CCBF1DA4511C5165` |
 | `s8` | `VaultWithdraw` after revocation — **still works** | `tesSUCCESS` | `AE48D99C42BF9D9F7F4A8BD4CEAD4BC748665070B98529B5B9AB2C92DD7F0359` |
+
+### Verified transactions (Phase 3 — the twist, 2026-09-12)
+
+`prestage` sells protection on Loan B; `s5` pays a premium; once Loan B's grace period lapses, `s9`
+impairs and defaults it and the manager (the referee holding the crypto-condition fulfillment)
+releases the escrow to the protection buyer.
+
+| Step | Transaction | Result | Hash |
+|---|---|---|---|
+| `prestage` | `EscrowCreate` (insurer locks covered amount) | `tesSUCCESS` | `8176143DD6D6F34FD90D7CA291E2DB1A4B34217B7F98574F6EC9FF24F7C1F8BD` |
+| `s5` | `Payment` (premium, buyer → insurer) | `tesSUCCESS` | `F893A293EDAD84B2061F26CD49B104F1DB9DB5890C48FEB335A43BADE3D4DE6F` |
+| `s9` | `LoanManage` (`tfLoanImpair`) | `tesSUCCESS` | `807EE4DF021A59A4555D1FD1CC76C081DD7164C9ED54CBF0E510CD911334EEF5` |
+| `s9` | `LoanManage` (`tfLoanDefault`) | `tesSUCCESS` | `4F8324E976FCCDDA18D629446E4E53FBFC619A34C9176257AA38C62FE47A7536` |
+| `s9` | `EscrowFinish` (manager reveals fulfillment) | `tesSUCCESS` | `8C6658F773FAC83F3F0A6D869E8098D9729954DAD7E7919CB10C348D39DD7F1E` |
+
+One real bug surfaced rehearsing this phase, detailed in `docs/FRICTION.md`:
+`five-bells-condition`'s `PreimageSha256` constructor silently ignores a `{ preimage }` options
+object (the base `Fulfillment` constructor takes none) — the preimage must be set via
+`f.setPreimage(preimage)` after construction, or `getConditionBinary()`/`serializeBinary()` throw
+`MissingDataError` later, decoupled from the actual mistake.
+
+A second, non-protocol issue surfaced immediately after: `s10`'s hardcoded withdrawal amounts
+assumed the share price stays at or above 1. Loan B's default was only partly absorbed by the
+manager's cushion, so the share price dropped below 1 and re-requesting the original deposit face
+value overdrew the investors' actual entitlement (`tecINSUFFICIENT_FUNDS`). Fixed by
+`flows/vault.ts`'s new `withdrawMax()`, which redeems exactly what the caller's shares are worth
+right now instead of a fixed amount.
 
 ## Roles
 

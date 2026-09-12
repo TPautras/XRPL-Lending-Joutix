@@ -20,7 +20,7 @@ import { waitUntilRippleTime } from './lib/time.js'
 import * as stablecoin from './flows/stablecoin.js'
 import { createDomain } from './flows/domain.js'
 import { issueCredential } from './flows/credentials.js'
-import { createVault, deposit, withdraw } from './flows/vault.js'
+import { createVault, deposit, withdrawMax } from './flows/vault.js'
 import { createBroker, depositCover } from './flows/broker.js'
 import { originate, pay, impair, defaultLoan, type LoanTerms } from './flows/loan.js'
 import { sellProtection, payPremium, payoutProtection } from './flows/insurance.js'
@@ -134,10 +134,15 @@ async function cmdStep(step: string) {
       break
     }
 
-    case 's10':
-      await withdraw(client, w.investorA, vaultId, issuanceId, 20_000)
-      await withdraw(client, w.investorB, vaultId, issuanceId, 15_000)
+    case 's10': {
+      // Redeem what the shares are actually worth now, not the face value deposited —
+      // a default the cushion didn't fully absorb can drop the share price below 1.
+      // See withdrawMax() in flows/vault.ts and docs/FRICTION.md.
+      const shareMptId = state.vault!.shareMptId
+      await withdrawMax(client, w.investorA, vaultId, shareMptId, issuanceId)
+      await withdrawMax(client, w.investorB, vaultId, shareMptId, issuanceId)
       break
+    }
 
     default:
       throw new Error(`Unknown step ${step}`)

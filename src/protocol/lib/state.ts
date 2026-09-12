@@ -48,6 +48,19 @@ export function loadState(): HackathonState {
 }
 
 export function saveState(state: HackathonState): void {
+  // Flows load state once, run their submit()s (each of which appends its own
+  // txLog entry via appendTxLog below), then save the same in-memory `state` at
+  // the end — a plain overwrite here would clobber those entries with the stale
+  // txLog snapshot the flow started with. Union with what's on disk by hash so
+  // no entry appended mid-flow is ever lost, then keep chronological order.
+  const onDisk = existsSync(STATE_PATH) ? (JSON.parse(readFileSync(STATE_PATH, 'utf-8')) as HackathonState) : EMPTY
+  const seen = new Set(state.txLog.map((e) => e.hash))
+  const mergedLog = [...state.txLog, ...onDisk.txLog.filter((e) => !seen.has(e.hash))]
+  mergedLog.sort((a, b) => a.ts.localeCompare(b.ts))
+  writeState({ ...state, txLog: mergedLog })
+}
+
+function writeState(state: HackathonState): void {
   mkdirSync(dirname(STATE_PATH), { recursive: true })
   writeFileSync(STATE_PATH, JSON.stringify(state, null, 2))
   // Mirrored into src/ui so the dashboard (served by Vite, browser-side) can read
@@ -57,5 +70,14 @@ export function saveState(state: HackathonState): void {
 }
 
 export function resetState(): void {
-  saveState(structuredClone(EMPTY))
+  writeState(structuredClone(EMPTY))
+}
+
+/** Appends one entry to txLog and persists immediately — called from lib/submit.ts
+ * on every transaction, independent of whatever flow-level state a caller may also
+ * be holding and will save later (see the merge in saveState above). */
+export function appendTxLog(entry: { ts: string; type: string; result: string; hash: string }): void {
+  const state = loadState()
+  state.txLog.push(entry)
+  writeState(state)
 }

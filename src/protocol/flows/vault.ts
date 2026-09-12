@@ -2,6 +2,7 @@ import type { Client, Wallet } from 'xrpl'
 import { submit, type SubmitResult } from '../lib/submit.js'
 import { createdNode } from '../lib/meta.js'
 import { mptAmount } from '../lib/mpt.js'
+import { vaultInfo, mptBalance } from '../lib/query.js'
 import { loadState, saveState } from '../lib/state.js'
 
 const TF_VAULT_PRIVATE = 0x00010000
@@ -77,4 +78,34 @@ export async function withdraw(
     { TransactionType: 'VaultWithdraw', VaultID: vaultId, Amount: mptAmount(issuanceId, units) },
     { expect, record },
   )
+}
+
+/** Redeems everything an investor's shares are actually worth right now, instead of a
+ * face-value amount fixed at deposit time. Needed because share price moves — a default
+ * not fully absorbed by the manager's cushion drops it below 1, so re-requesting the
+ * original deposit amount overdraws the investor's real entitlement and returns
+ * `tecINSUFFICIENT_FUNDS` (found rehearsing s10 after a real default: see docs/FRICTION.md).
+ * All-integer math throughout, matching CLAUDE.md's "never do float math on ledger
+ * amounts" — a BigInt floor division intentionally leaves a small amount unredeemed
+ * rather than risk rounding the request up past what's actually owned. */
+export async function withdrawMax(
+  client: Client,
+  investor: Wallet,
+  vaultId: string,
+  shareMptId: string,
+  issuanceId: string,
+): Promise<SubmitResult> {
+  const vault = await vaultInfo(client, vaultId)
+  const assetsTotal = BigInt(String(vault.AssetsTotal ?? '0'))
+  const outstandingShares = BigInt(
+    String((vault.shares as { OutstandingAmount?: string } | undefined)?.OutstandingAmount ?? '0'),
+  )
+  const sharesOwned = BigInt(await mptBalance(client, investor.classicAddress, shareMptId))
+  const redeemable = outstandingShares > 0n ? (sharesOwned * assetsTotal) / outstandingShares : 0n
+
+  return submit(client, investor, {
+    TransactionType: 'VaultWithdraw',
+    VaultID: vaultId,
+    Amount: { mpt_issuance_id: issuanceId, value: redeemable.toString() },
+  })
 }

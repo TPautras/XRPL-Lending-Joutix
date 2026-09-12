@@ -1,5 +1,6 @@
 import type { Client, SubmittableTransaction, Wallet } from 'xrpl'
 import { NETWORK } from './env.js'
+import { appendTxLog } from './state.js'
 
 export interface SubmitResult {
   hash: string
@@ -62,6 +63,9 @@ async function finish(
   const mark = record ? '·' : ok ? '✓' : '✗'
   const expectNote = record ? ' (recorded, not asserted)' : expect ? ` (expected ${expect})` : ''
   console.log(`${mark} ${txType} -> ${resultCode}${expectNote}  ${link}`)
+  // Recorded even for deliberate/rejected transactions — the Explorer page renders
+  // failures as evidence, not errors (CLAUDE.md "The webapp" > Explorer).
+  appendTxLog({ ts: new Date().toISOString(), type: txType, result: resultCode, hash })
   if (!ok && !record) {
     throw new Error(`${txType} returned ${resultCode}, expected ${wantCode} -- ${link}`)
   }
