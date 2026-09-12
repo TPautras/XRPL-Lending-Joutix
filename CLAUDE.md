@@ -334,12 +334,13 @@ sink for every team at this event.
 - Do not give the webapp a button that submits a TrustFlow transaction. The browser holds no key,
   `LoanSet` needs two, and an uncredentialed visitor's deposit lands `tecNO_AUTH` — the gate
   working correctly, but indistinguishable on stage from a broken app. See "The webapp".
-  **One deliberate exception, on the branch `feat/open-protection-market` only:** `/market` lets a
-  connected wallet write, pay, claim and reclaim credit-insurance policies. None of the three
-  reasons above applies there — a policy is an `EscrowCreate` over the visitor's own XRP,
+  **One deliberate exception, and only this one:** `/market` lets a connected wallet write, pay,
+  claim and reclaim credit-insurance policies. None of the three reasons above applies there — a
+  policy is an `EscrowCreate` over the visitor's own XRP,
   single-signed, and escrows are not gated by the vault's `PermissionedDomain`. The rule stands
   unchanged for every TrustFlow protocol transaction (deposit, loan, repayment, withdrawal) and
-  for the demo path on `main`; the market page is an overlay that touches none of them.
+  for every other screen; the market page is an overlay that touches none of them. Any new
+  submitting button needs the same three tests answered before it is written.
 - Check every transaction result for `tesSUCCESS` and surface the raw engine result code on failure —
   for these newer tx types the code is the fastest debugging signal.
 - Amounts: respect vault `Scale` and MPT precision; never do float math on ledger amounts.

@@ -218,7 +218,7 @@ over a `hashchange` listener (`src/ui/lib/router.ts`), which also means the page
 | `/dashboard` | Dashboard | Share price, `AssetsTotal`/`AssetsAvailable`, `LossUnrealized`, the cushion against `CoverRateMinimum`, both loans with their flags and grace countdown, the insurance state, and a ledger-close feed |
 | `/gate` | The Gate | Every role account with its live credential state and TFEUR balance, plus the four-state access matrix with hashes |
 | `/insurance` | Protection | The escrow as a diagram, its live state, and the wall — the trusted party named on screen, not implied |
-| `/market` | Market | The open protection market — the one screen that submits from the browser (this branch only, see below) |
+| `/market` | Market | The open protection market — the one screen that submits from the browser (see below) |
 | `/explorer` | Explorer | Every transaction the demo produced, newest first; deliberate refusals labelled as such, anything else counted as an unexpected failure |
 | `/findings` | Findings | The three findings as cards, each with repro command, hashes and proposed fix |
 
@@ -234,11 +234,12 @@ browser holds no protocol key, `LoanSet` needs two signatures, and a visitor's w
 indistinguishable from a broken app. The `xrpl-connect` widget on Home shows a connected account
 and nothing else.
 
-The exception is `/market`, added on this branch — see below.
+The exception is `/market` — see below.
 
 ### The open protection market (`/market`)
 
-A policy is an `EscrowCreate` over the visitor's **own XRP**, single-signed, carrying a
+Anyone with a wallet on this devnet can write default protection on a loan, buy it, and settle
+it. A policy is an `EscrowCreate` over the visitor's **own XRP**, single-signed, carrying a
 crypto-condition the referee published. None of the three reasons above applies to it: no
 protocol key is involved, nothing needs a second signature, and escrows are not gated by the
 vault's `PermissionedDomain` — the same asymmetry [finding 2](#2-a-private-vault-gates-deposits-but-not-loans)
