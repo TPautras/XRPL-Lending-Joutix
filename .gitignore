@@ -10,3 +10,4 @@ xrpl-devex-hook/
 .env.*
 !.env.example
 dist/
+.vite/
