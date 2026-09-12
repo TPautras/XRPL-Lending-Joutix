@@ -1,0 +1,11 @@
+.xrpl-devex/
+.claude/settings.local.json
+.claude/
+.codex/
+.grok/
+.cursor/
+node_modules/
+xrpl-devex-hook/
+.env
+.env.*
+!.env.example
