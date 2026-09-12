@@ -31,10 +31,22 @@ A closed-ended vault has two UInt32 Ripple-epoch dates that cut its life into th
 - ⚠️ They are **undocumented**: absent from the XLS-65 README on `master` and from the xrpl.org
   `VaultCreate` reference. Which transaction carries them, and the exact reject semantics, come from
   the ledger, not from a spec page.
-- ⚠️ **SDK footgun:** xrpl.js 5.2.0's `VaultCreate` TypeScript interface declares only `Asset`,
-  `Data`, `AssetsMaximum`, `MPTokenMetadata`, `WithdrawalPolicy`, `DomainID`, `Scale`. The dates are
-  in `ripple-binary-codec` but not in the type, so setting them needs a cast. Wrap that cast in one
-  helper in `src/protocol/` with a comment pointing here — do not scatter `as any` across flows.
+- ⚠️ **`VaultKind` gates everything** (confirmed by reading `5.2.0-beta.1`'s `validateVaultCreate`
+  source, not yet confirmed against Devnet `rippled` itself — that check is still open): a
+  `VaultKind` enum, `0` = open-ended / `1` = closed, undocumented in XLS-65 or xrpl.org, must be
+  `1` before `SubscriptionDate`/`RedemptionDate` are accepted at all; setting either while
+  `VaultKind !== 1` throws client-side. The SDK also enforces
+  `180 ≤ RedemptionDate − SubscriptionDate < 946708560` seconds — a **3-minute floor** on the
+  Investment phase, so "compress to minutes" has a hard lower bound. `VaultSet` carries neither
+  date, so they read as immutable post-creation. None of this is on any spec page; see
+  `docs/SEAMS.md`.
+- ⚠️ **SDK footgun, version-dependent — check which is pinned before trusting this:** stable
+  `xrpl@5.2.0`'s `VaultCreate` TypeScript interface declares only `Asset`, `Data`,
+  `AssetsMaximum`, `MPTokenMetadata`, `WithdrawalPolicy`, `DomainID`, `Scale` — the dates are in
+  `ripple-binary-codec` but not the type, so setting them needs a cast. The pinned
+  `5.2.0-beta.1` (see Stack below) already types `VaultKind`/`SubscriptionDate`/`RedemptionDate`,
+  so no cast is needed there — but re-verify against whatever version is actually installed
+  before assuming either way.
 - ⚠️ **No phase-specific result codes exist.** Devnet has no `tecVAULT_*`. Out-of-phase rejects will
   surface as something generic — `tecNO_PERMISSION`, `tecEXPIRED`, `tecTOO_SOON` and
   `tecINVALID_UPDATE_TIME` are the plausible candidates. **Do not guess in code or in the demo
@@ -50,10 +62,26 @@ A closed-ended vault has two UInt32 Ripple-epoch dates that cut its life into th
 
 - TypeScript. Protocol layer in `src/protocol/` (one file per flow), demo UI in `src/ui/`
   (Vite + React + TS, client-only, talks to Devnet over websocket).
-- `xrpl@5.2.0` — **pinned and latest**; verified to serialize `VaultCreate`, `VaultSet`,
-  `VaultDeposit`, `VaultWithdraw`, `LoanBrokerSet`, `LoanSet`, `LoanPay`, `LoanManage`,
-  `CredentialCreate`, `PermissionedDomainSet`, `VaultClawback`. Do not bump without re-checking
-  those types *and* the date-field gap above.
+- `xrpl@5.2.0-beta.1` — **pinned, not stable `latest`**; verified to serialize `VaultCreate`,
+  `VaultSet`, `VaultDeposit`, `VaultWithdraw`, `LoanBrokerSet`, `LoanSet`, `LoanPay`,
+  `LoanManage`, `CredentialCreate`, `PermissionedDomainSet`, `VaultClawback`. Do not bump
+  without re-checking those types *and* the date-field gap above. History:
+  - Stable `5.2.0`'s `VaultCreate` type has **no** `SubscriptionDate`/`RedemptionDate`/
+    `VaultKind` at all — the "needs an `as any` cast" footgun below described that version.
+  - `5.2.0-beta.0` adds all three, plus a `VaultKind` enum (`0` open, `1` closed) that
+    **gates** the dates: `validateVaultCreate` rejects them unless `VaultKind: 1`, and enforces
+    `180 ≤ RedemptionDate − SubscriptionDate < 946708560` seconds. `VaultSet` carries neither
+    date, so they read as immutable after creation. None of this is documented anywhere but the
+    beta's own validator source — see `docs/SEAMS.md`.
+  - `5.2.0-beta.1`: the vault/lending transaction models are **byte-identical** to `beta.0`
+    (diffed both tarballs in full — zero changes anywhere under
+    `dist/npm/models/transactions/`). The only functional change in the whole package is to
+    `Wallet/{sponsorSigner,counterpartySigner,utils}`: sponsor- and counterparty-signed
+    transactions now use distinct `fixCleanup3_4_0` signing prefixes
+    (`encodeForSigningSponsor`/`encodeForSigningCounterparty`) instead of reusing the plain
+    transaction prefix. Relevant if the sponsored-fees-and-reserves coupling (see Event
+    requirement below) gets built — `beta.0`'s sponsor signatures may not validate against a
+    `rippled` enforcing `fixCleanup3_4_0`.
 - Run a protocol script: `npx tsx src/protocol/<name>.ts`. UI: `npm run dev`.
 - Vite + React 19 is scaffolded; `package.json` scripts are `dev`, `build`, `preview`,
   `typecheck`, plus per-flow `tsx` invocations.
@@ -61,7 +89,7 @@ A closed-ended vault has two UInt32 Ripple-epoch dates that cut its life into th
   declarations** — `src/ui/wallet/xrpl-connect.d.ts` is hand-written from the bundle's export
   list and must be re-checked on any upgrade. Do **not** switch to
   `@xrpl-commons/xrpl-connect-react`: it peer-requires `xrpl ^3 || ^4`, which conflicts with the
-  `xrpl@5.2.0` pin above. See `docs/SEAMS.md`.
+  `xrpl@5.2.0-beta.1` pin above. See `docs/SEAMS.md`.
 
 ## Environment
 

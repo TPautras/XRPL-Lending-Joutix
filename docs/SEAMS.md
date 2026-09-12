@@ -81,3 +81,27 @@ Vite + React 19 + TS app on Devnet.
    WalletConnect (the only transport the XRPL Dev Wallet extension supports — see the entry
    above) is effectively session-per-tab; a reload always means re-pairing. The UI should say
    this instead of looking like a random disconnect.
+
+8. **`xrpl@5.2.0` → `5.2.0-beta.0` → `5.2.0-beta.1`: three different pictures of the vault
+   date fields from three versions apart by patch number, not by any documented change.**
+   Fetched and diffed all three tarballs directly rather than trust `npm view`/changelogs
+   (there is no changelog entry distinguishing them):
+   - Stable `5.2.0`: `VaultCreate`'s type has no `SubscriptionDate`/`RedemptionDate`/
+     `VaultKind` — the "needs a cast" note CLAUDE.md carried before this check.
+   - `5.2.0-beta.0`: adds all three. `VaultKind` (`0` open, `1` closed) turns out to *gate*
+     the dates entirely — `validateVaultCreate` throws if either date is set while
+     `VaultKind !== 1` — and enforces a `[180, 946708560)`-second bound on
+     `RedemptionDate − SubscriptionDate`. None of this is in XLS-65, xrpl.org, or any release
+     note; it only exists in the validator's own source.
+   - `5.2.0-beta.1`: `dist/npm/models/transactions/*` is **byte-identical** to `beta.0` — a
+     full recursive diff of both tarballs confirms zero changes on the vault/lending surface.
+     The only functional change anywhere in the package is `Wallet/sponsorSigner`,
+     `Wallet/counterpartySigner` and `Wallet/utils` gaining distinct `fixCleanup3_4_0` signing
+     prefixes (`encodeForSigningSponsor`/`encodeForSigningCounterparty`) instead of reusing the
+     plain transaction prefix for those roles — relevant only if/when the sponsored-fees
+     coupling gets built.
+
+   Two things worth naming: a prerelease's *source* was the only way to learn `VaultKind`
+   exists at all, and a three-way tarball diff was the only way to know that a patch-level
+   prerelease bump changed nothing we depend on. Neither should require decompiling a
+   package to find out.
