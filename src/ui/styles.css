@@ -151,3 +151,15 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 .steps { margin: 0; padding-left: 20px; font-size: 13.5px; color: var(--muted); }
 .steps li { margin-bottom: 8px; }
 .steps code { color: var(--text); }
+
+/*
+ * <xrpl-wallet-connector> always paints its own built-in "Connect Wallet" / address
+ * button in its shadow DOM (exposed as `part="connect-button"`) — it is not just a
+ * headless modal host. There is exactly one instance app-wide (mounted once in
+ * WalletProvider), opened imperatively via ref.open() from our own trigger buttons,
+ * so its native button must stay hidden or it renders a stray extra "Connect wallet"
+ * wherever the element happens to sit in the DOM.
+ */
+xrpl-wallet-connector::part(connect-button) {
+  display: none;
+}
