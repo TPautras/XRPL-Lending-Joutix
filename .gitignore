@@ -13,3 +13,4 @@ dist/
 state/
 public/state.json
 .vite/
+smoke-build/

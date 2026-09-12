@@ -80,6 +80,7 @@ Other commands:
 | `npm run demo reset` | Wipes `state/hackathon.json` only. Never touches the ledger — a fresh `setup` afterwards creates brand-new on-chain objects. |
 | `npm run dev` | The webapp on `localhost:5173`. |
 | `npm run typecheck` | `tsc` over both the UI and the protocol scripts. |
+| `npm run smoke` | Mounts the whole app in jsdom against the live devnet and walks all seven routes, failing on a render crash, a console error, or a screen that came back empty. There is no browser in this loop, and typecheck alone does not notice a component that throws on real ledger data. It does not check layout — Recharts measures to zero in jsdom, so the charts render as empty SVG there. |
 
 ---
 

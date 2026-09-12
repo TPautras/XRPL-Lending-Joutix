@@ -93,24 +93,60 @@ function ReservePanel({ vault, history }: { vault: VaultView | null; history: Sa
 }
 
 /**
- * What the reserve has already lost and not yet realized. Flat at zero for the whole demo
- * until the manager records a default — which is exactly why it is on screen as a shape and
- * not only as a number.
+ * What the reserve has already lost and not yet realized.
+ *
+ * Zero is three different stories and the panel has to tell them apart. With no default on
+ * the books it is simply "nothing has gone wrong yet". With a loan carrying
+ * `lsfLoanDefault` and `LossUnrealized` still absent from the vault, it is the demo's whole
+ * point: the manager's first-loss cover absorbed the hit before any investor saw it. Saying
+ * only "€0.00" at that moment leaves the audience to guess which of the two they are
+ * looking at — and the second one is the thing worth watching.
  */
-function LossPanel({ vault, history }: { vault: VaultView | null; history: Sample[] }) {
+function LossPanel({
+  vault,
+  loans,
+  history,
+}: {
+  vault: VaultView | null
+  loans: Record<'A' | 'B', LoanView | null>
+  history: Sample[]
+}) {
   if (!vault) return null
   const hasLoss = Number(vault.lossUnrealized) > 0
   const formatted = eur(vault.lossUnrealized, vault.assetScale)
+  const defaulted = (['A', 'B'] as const).filter((slot) => loans[slot]?.status === 'defaulted')
+  const absorbed = !hasLoss && defaulted.length > 0
 
   return (
     <Panel
       title="Unrealized loss"
-      tone={hasLoss ? 'err' : 'on'}
-      aside={<Chip>{hasLoss ? 'a default has been recorded' : 'nothing written down'}</Chip>}
+      tone={hasLoss ? 'err' : absorbed ? 'warn' : 'on'}
+      aside={
+        <Chip>
+          {hasLoss
+            ? 'investors are carrying it'
+            : absorbed
+              ? 'absorbed by the cushion'
+              : 'no default on the books'}
+        </Chip>
+      }
     >
       <Changed value={formatted} tone="err">
-        <Metric value={formatted} label="LossUnrealized, straight off vault_info" tone={hasLoss ? 'err' : undefined} />
+        <Metric
+          value={formatted}
+          label="LossUnrealized, straight off vault_info"
+          tone={hasLoss ? 'err' : undefined}
+        />
       </Changed>
+
+      {absorbed && (
+        <p className="text-warn mt-2.5 text-[13px]">
+          Loan {defaulted.join(' and ')} {defaulted.length > 1 ? 'are' : 'is'} defaulted, and this is still zero — the
+          manager’s first-loss cover took the hit. The vault only writes down a loss once the cushion is exhausted, so
+          a reserve showing €0.00 next to a defaulted loan is the cushion doing its job, not a missing number.
+        </p>
+      )}
+
       <div className="mt-4">
         <Trend data={history} metric="lossUnrealized" name="Unrealized loss" format={(v) => `€${v.toLocaleString()}`} />
       </div>
@@ -209,9 +245,9 @@ function CushionPanel({
   )
 }
 
-const LOAN_TONE = { active: 'on', impaired: 'warn', defaulted: 'err' } as const
-const LOAN_BADGE = { active: 'ok', impaired: 'warn', defaulted: 'err' } as const
-const LOAN_LABEL = { active: 'Active', impaired: 'Impaired', defaulted: 'Defaulted' } as const
+const LOAN_TONE = { active: 'on', repaid: 'on', impaired: 'warn', defaulted: 'err' } as const
+const LOAN_BADGE = { active: 'ok', repaid: 'muted', impaired: 'warn', defaulted: 'err' } as const
+const LOAN_LABEL = { active: 'Active', repaid: 'Repaid in full', impaired: 'Impaired', defaulted: 'Defaulted' } as const
 
 function LoanCard({
   slot,
@@ -238,6 +274,7 @@ function LoanCard({
 
   const defaultableAt = loan.nextPaymentDueDate ? loan.nextPaymentDueDate + loan.gracePeriod : null
   const payable = loan.status !== 'defaulted' && loan.paymentRemaining > 0
+  const closed = loan.status === 'repaid'
 
   return (
     <Panel
@@ -248,7 +285,7 @@ function LoanCard({
         </>
       }
       tone={LOAN_TONE[loan.status]}
-      aside={<Chip>{loan.paymentRemaining} payment(s) left</Chip>}
+      aside={<Chip>{closed ? 'nothing left to pay' : `${loan.paymentRemaining} payment(s) left`}</Chip>}
     >
       <Fields>
         <Field label="Outstanding">
@@ -270,7 +307,17 @@ function LoanCard({
       </Fields>
 
       <p className="text-muted-foreground mt-3 text-[13px]">
-        Grace period {loan.gracePeriod}s after the due date — measured in ledger time, not wall clock.
+        {closed ? (
+          <>
+            The ledger keeps no “repaid” flag — a settled loan simply stops carrying{' '}
+            <code className="text-foreground">PrincipalOutstanding</code> and{' '}
+            <code className="text-foreground">PaymentRemaining</code>, and its{' '}
+            <code className="text-foreground">Flags</code> read <code className="text-foreground">0</code>, exactly like
+            an untouched one.
+          </>
+        ) : (
+          <>Grace period {loan.gracePeriod}s after the due date — measured in ledger time, not wall clock.</>
+        )}
       </p>
 
       {isConnected && payable && (
@@ -652,7 +699,7 @@ export function Dashboard() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <LossPanel vault={view.vault} history={history} />
+        <LossPanel vault={view.vault} loans={view.loans} history={history} />
         <CushionPanel broker={view.broker} history={history} onPostCover={postCover} busy={busy} />
       </div>
 
