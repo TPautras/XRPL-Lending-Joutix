@@ -193,33 +193,46 @@ account and nothing else. Keep it that way.
 `lib/state.ts` mirrors `state/hackathon.json` there on every write, so Vite serves it at
 `/state.json`) and live RPC/subscriptions against `NETWORK.wss`. Nothing else. If a page needs
 a fact that is in neither, the fix is to write it into the state file from the protocol scripts,
-not to add a server.
+not to add a server. Two facts were added that way for the Gate page: `state.accounts` (the eight
+role addresses, written by **`npm run demo accounts`** — local only, derives public addresses from
+`.env` and submits nothing) and `state.gate` (the Phase 2 access matrix, written by
+`npm run demo gate`; before that command has been run the page says so instead of inventing rows).
+**No seed ever goes in the state file** — it is mirrored into `public/` and served to the browser.
 
 ### Pages
 
 | Route | Page | Serves | Status |
 |---|---|---|---|
-| `/` | Home | Pitch 0:00–1:00 | to build |
+| `/` | Home | Pitch 0:00–1:00 | ✅ built (`pages/Home.tsx`) |
 | `/dashboard` | Dashboard | Pitch 1:00–3:00 | ✅ exists |
-| `/gate` | The Gate | Pitch 3:30–4:00, the "Loaded" flavour | to build |
+| `/gate` | The Gate | Pitch 3:30–4:00, the "Loaded" flavour | ✅ built (`pages/Gate.tsx`) |
 | `/insurance` | Protection | Pitch 3:00–3:30, the wall | to build |
 | `/explorer` | Explorer | "Links to verified on-ledger transactions" | to build |
 | `/findings` | Findings | The 40%-weighted feedback, made legible | to build |
 
 Build order if time runs short: Home → Gate → Explorer → Findings → Insurance. The Dashboard
 already carries the demo; everything after Gate is presentation polish, and a half-finished page
-is worse on stage than an absent one.
+is worse on stage than an absent one. **Home, Dashboard and Gate are done** — Explorer is next,
+and it is still blocked on `txLog` never being appended to.
 
 **1. Home / landing.** The SME waiting 90 days, the four roles and who puts money in first-loss,
 and the one sentence that matters: every step is native XLS-65/66, no custom contracts. One CTA
 into `/dashboard`. Static — no RPC, so it renders even if the devnet is down mid-pitch. It is also
 the safe screen to open on if the ledger has reset.
 
+> **Primitives:** none (narrative only). **Ledger objects:** none. **Data:** none — deliberately.
+
 **2. Dashboard** (`dashboard/Dashboard.tsx`, live). Share price, `AssetsTotal`/`AssetsAvailable`,
 `LossUnrealized`, manager cover vs `CoverRateMinimum`, the two loans with their status flags, the
 insurance state, and a ledger-close event feed. This is the screen the default trigger (`s9`) is
 performed against — the cushion draining and `LossUnrealized` moving is the whole visual payload of
 the demo. It polls `/state.json` every 5s and re-reads the ledger on every `ledgerClosed`.
+
+> **Primitives:** XLS-65 (vault), XLS-66 (broker + loans), MPT (vault shares).
+> **Ledger objects:** `Vault` (+ its share `MPTokenIssuance`), `LoanBroker`, `Loan` ×2, `Escrow`
+> (state flags only). **Effects of:** `VaultDeposit`, `VaultWithdraw`, `LoanBrokerCoverDeposit`,
+> `LoanSet`, `LoanPay`, `LoanManage`. **Data:** `vault_info`, `ledger_entry`, `subscribe
+> streams:['ledger']`.
 
 **3. The Gate.** The flavour, on screen. Each of the 8 role accounts with its address, TFEUR
 balance and credential state (`missing` / `issued, not accepted` / `accepted`) — read live via
@@ -232,12 +245,26 @@ allowed throughout. The ungated withdrawal is labelled as an XLS-65 §7 guarante
 Below that, the deposits-gated-but-loans-not finding, stated in exactly the words the Rules
 section fixes — no "vulnerability", no "exploit".
 
+> **Primitives:** XLS-70 (credentials), XLS-80 (permissioned domain), MPT (`DomainID` on the share
+> issuance, TFEUR balances), XLS-65 §3.5.2.2 #6 and §7 (the deposit check and the withdrawal
+> carve-out). **Ledger objects:** `Credential` ×8, `PermissionedDomain`, `MPToken`,
+> `MPTokenIssuance`. **Shows:** `CredentialCreate`, `CredentialAccept`, `CredentialDelete`,
+> `PermissionedDomainSet`, and the `VaultDeposit`/`VaultWithdraw`/`LoanSet` results they gate.
+> **Result codes on screen:** `tecNO_AUTH`, `tesSUCCESS`. **Data:** `account_objects
+> type=credential` (both directories), `ledger_entry`, `state.json` hashes.
+
 **4. Protection (insurance).** The escrow as a diagram: insurer locks, buyer pays premiums,
 manager-as-referee holds the fulfillment. Show the live escrow object and whether it is locked,
 released or expired. The page's real content is **the wall**: TokenEscrow releases on time or on a
 crypto-condition, never on another ledger object's state, so the referee is a named trusted party
 and the product is not trustless. Name the party on screen. Do not draw an arrow that implies the
 `Loan`'s default flag reaches the escrow by itself.
+
+> **Primitives:** TokenEscrow (MPT-denominated), PREIMAGE-SHA-256 crypto-conditions
+> (`five-bells-condition`), XLS-66 `LoanManage tfLoanDefault` as the *off-ledger* trigger.
+> **Ledger objects:** `Escrow` (`Condition`, `CancelAfter`, `Destination`, `OfferSequence`).
+> **Shows:** `EscrowCreate`, `EscrowFinish`, `EscrowCancel`, plus the premium `Payment`s.
+> **Data:** `account_objects type=escrow` on the insurer, `state.insurance`.
 
 **5. Explorer.** Every transaction the demo produced, newest first: timestamp, type, engine result
 code, and a link to `custom.xrpl.org`. Failures (`tecNO_AUTH`, `tecINSUFFICIENT_FUNDS`,
@@ -246,21 +273,60 @@ transactions are evidence, not errors. **Prerequisite: `HackathonState.txLog` is
 `lib/state.ts` and nothing ever appends to it.** `lib/submit.ts` has to push `{ts, type, result,
 hash}` on every submission before this page has anything to show.
 
+> **Primitives:** all of them — this is the page that discharges the "every XLS-65/66 transaction
+> used" deliverable, so it must cover all 18 types in the matrix below. **Data:** `state.txLog`
+> only; no RPC. Group rows by demo step (`setup`, `s1`…`s10`) so the audience can follow along.
+
 **6. Findings.** The three discoveries as cards — the escrow wall, deposits-gated-but-loans-not,
 and the `PrincipalRequested` base-unit convention — each with its repro command, its transaction
 hashes, and its proposed fix, linking through to `/explorer`. Source of truth stays
 `FEEDBACK_REPORT.md` and `docs/FRICTION.md`; this page renders them, it does not restate them in
 different words, or the two drift apart by Sunday morning.
 
+> **Primitives:** TokenEscrow (the wall), XLS-66 §3.8.5.2 (no domain check on `LoanSet`), XLS-66
+> §3.11.2 + MPT `AssetScale` (the two Phase 1 bugs). **Result codes explained:** `tecNO_AUTH`,
+> `tecKILLED`, `tecINSUFFICIENT_FUNDS`. **Data:** the two markdown files, rendered.
+
+### Feature coverage
+
+Every transaction type the demo submits, and the page that shows it. A type with no page is a
+hole in the "every XLS-65/66 transaction used" deliverable.
+
+| Transaction | Primitive | Shown on |
+|---|---|---|
+| `MPTokenIssuanceCreate`, `MPTokenAuthorize` | MPT (XLS-33) | Explorer, Gate (balances) |
+| `Payment` (TFEUR payouts, premiums) | MPT | Explorer, Insurance |
+| `PermissionedDomainSet` | XLS-80 | Gate, Explorer |
+| `CredentialCreate`, `CredentialAccept`, `CredentialDelete` | XLS-70 | Gate, Explorer |
+| `VaultCreate` | XLS-65 | Dashboard, Explorer |
+| `VaultDeposit` | XLS-65 | Dashboard, Gate, Explorer |
+| `VaultWithdraw` | XLS-65 | Dashboard, Gate, Explorer |
+| `LoanBrokerSet`, `LoanBrokerCoverDeposit` | XLS-66 | Dashboard (cushion), Explorer |
+| `LoanSet` | XLS-66 | Dashboard, Gate (the finding), Explorer |
+| `LoanPay` | XLS-66 | Dashboard, Explorer, Findings (`tecKILLED`) |
+| `LoanManage` | XLS-66 | Dashboard (status flags), Insurance (the trigger), Explorer |
+| `EscrowCreate`, `EscrowFinish`, `EscrowCancel` | TokenEscrow | Insurance, Explorer |
+
+Price Oracle is in the Architecture table as optional and is **not used** — no page claims it.
+If it stays unused, say so once on Home rather than letting a judge wonder.
+
 ### Routing and known gaps
 
-- **No router.** Six static routes need ~30 lines of `hashchange` listener; prefer that over adding
-  `react-router-dom` for a demo that never deep-links. Hash routes also survive being opened from
-  `file://` or a stale `vite preview` if the dev server dies.
-- **The Dashboard displays base units as euros.** `eur()` in `Dashboard.tsx` formats
-  `AssetsTotal` (cents, `TFEUR_SCALE = 2`) straight into a `€` string, so every figure on screen
-  reads 100x high. Divide by `10 ** TFEUR_SCALE` at the render edge only — never do float math
+- **Router: done.** `src/ui/router.ts`, ~45 lines of `hashchange` over `useSyncExternalStore`, no
+  `react-router-dom`. Hash routes survive being opened from a stale `vite preview` if the dev server
+  dies. `ROUTES` holds all six; **`BUILT` is what the nav renders** — add a route to `BUILT` only
+  when its page exists, and anything unknown (a typo, a stale link) falls back to Home rather than
+  a blank screen.
+- ~~**The Dashboard displays base units as euros.**~~ **Fixed.** All formatting now lives in
+  `src/ui/lib/format.ts` and divides by `10 ** TFEUR_SCALE` at the render edge only; the hook keeps
+  raw base units throughout. Share price is the one figure that must **not** be divided — it is
+  `AssetsTotal / OutstandingAmount`, a ratio of two base-unit counts, so it is already scale-free.
+  The original rule stands for anything new: divide at the render edge only — never do float math
   before that, and never on a value about to be submitted.
+- **Two "Connect wallet" buttons in the header on `/dashboard`.** `WalletConnector` renders its own
+  styled `.btn` *and* `<xrpl-wallet-connector>`, which draws a button of its own. Pre-existing, and
+  cosmetic, but it is on the demo screen. Fixing it means dropping our button and letting the custom
+  element's be the trigger (it loses our theming), so it needs a click-test, not a blind edit.
 - **`txLog` is empty** — see Explorer above.
 - The `xrpl-connect` scaffold is kept but unused by the demo path; do not assume it fits any new
   screen without checking.
@@ -322,5 +388,10 @@ sink for every team at this event.
 - Check every transaction result for `tesSUCCESS` and surface the raw engine result code on failure —
   for these newer tx types the code is the fastest debugging signal.
 - Amounts: respect vault `Scale` and MPT precision; never do float math on ledger amounts.
+- **Never render a TFEUR amount with a `€` sign.** TFEUR is an MPT our own issuer minted on a
+  devnet — no reserve, no redemption, no obligation. It is denominated in euros; it is not euros,
+  and a euro glyph on stage claims a fiat redemption nobody here can honour. The UI shows the
+  ticker (`2,030.00 TFEUR`) via `tfeur()` in `src/ui/lib/format.ts`, or a bare number under a
+  column header that already says TFEUR.
 - Pull XLS-65/66 specs fresh from `XRPLF/XRPL-Standards@master` at build time; both are still
   `status: Draft`. When the ledger and the spec disagree, the ledger wins — log the divergence.

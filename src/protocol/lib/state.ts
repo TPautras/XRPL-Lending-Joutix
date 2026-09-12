@@ -29,6 +29,24 @@ export interface EscrowState {
   cancelled?: boolean
 }
 
+/** One row of the Phase 2 access matrix, exactly as `flows/gate.ts` observed it. */
+export interface GateObservationState {
+  state: string
+  action: string
+  result: string
+  hash: string
+  note?: string
+}
+
+export interface GateEvidence {
+  /** ISO timestamp of the run that produced these rows. */
+  ranAt: string
+  /** The single account walked through every credential state. */
+  intruder: string
+  vaultId: string
+  observations: GateObservationState[]
+}
+
 export interface HackathonState {
   mptIssuanceId?: string
   credentialType?: string
@@ -37,6 +55,13 @@ export interface HackathonState {
   loanBrokerId?: string
   loans: { A?: LoanState; B?: LoanState }
   insurance?: EscrowState
+  /** Role name -> classic address. The browser cannot read `.env`, and the Gate page has
+   * to name the eight participants; `npm run demo accounts` writes them here. Public
+   * addresses only — no seed ever reaches this file, which is mirrored into `public/`. */
+  accounts?: Record<string, string>
+  /** Written by `npm run demo gate` so the Gate page renders the ledger's own answers
+   * instead of a table retyped from the README. */
+  gate?: GateEvidence
   txLog: Array<{ ts: string; type: string; result: string; hash: string }>
 }
 

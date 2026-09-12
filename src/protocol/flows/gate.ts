@@ -27,7 +27,7 @@ import { submitBlob } from '../lib/submit.js'
 import { mptBaseUnits } from '../lib/mpt.js'
 import { vaultInfo, mptBalance } from '../lib/query.js'
 import { logFriction } from '../lib/friction.js'
-import { loadState } from '../lib/state.js'
+import { loadState, saveState } from '../lib/state.js'
 import { deposit, withdraw } from './vault.js'
 import { issueCredential, acceptCredential, revokeCredential, credentialStatus } from './credentials.js'
 import * as stablecoin from './stablecoin.js'
@@ -262,6 +262,19 @@ export async function proveGate(
 
   printMatrix(observations)
   interpret(observations, borrow, uncredentialedDeposit)
+
+  // Persist the matrix so the Gate page can render the ledger's own answers. Without
+  // this the evidence only ever existed in stdout and in a table retyped into the
+  // README, which is exactly how the two drift apart.
+  const after = loadState()
+  after.gate = {
+    ranAt: new Date().toISOString(),
+    intruder: intruder.classicAddress,
+    vaultId,
+    observations,
+  }
+  saveState(after)
+
   return observations
 }
 

@@ -3,6 +3,7 @@
  *
  * Commands:
  *   setup     one-time: stablecoin, credentials domain, private vault, broker (no cover yet)
+ *   accounts  write the eight role addresses into the state file for the UI (no ledger writes)
  *   gate      Phase 2 evidence: walks one account through every credential state and
  *             records what the ledger answers, including the uncredentialed-borrower probe
  *   prestage  run ~5 min before going on stage: cover, loan B (the one that will default),
@@ -14,12 +15,12 @@
  *             next time `setup` runs against them again — nothing here re-funds XRP)
  */
 import { getClient, disconnectClient } from './lib/client.js'
-import { loadWallets } from './lib/env.js'
-import { loadState, resetState } from './lib/state.js'
+import { loadWallets, ROLE_NAMES } from './lib/env.js'
+import { loadState, saveState, resetState } from './lib/state.js'
 import { waitUntilRippleTime } from './lib/time.js'
 import * as stablecoin from './flows/stablecoin.js'
 import { createDomain } from './flows/domain.js'
-import { issueCredential } from './flows/credentials.js'
+import { credentialType, issueCredential } from './flows/credentials.js'
 import { createVault, deposit, withdraw } from './flows/vault.js'
 import { createBroker, depositCover } from './flows/broker.js'
 import { originate, pay, impair, defaultLoan, type LoanTerms } from './flows/loan.js'
@@ -34,9 +35,27 @@ const INSURANCE_COVERED_UNITS = 2500
 const INSURANCE_PREMIUM_UNITS = 150
 const INSURANCE_CANCEL_AFTER_SECONDS = 45 * 60
 
+/**
+ * Writes the eight role addresses into the state file. Local only — derives public
+ * addresses from the seeds already in `.env` and submits nothing. The Gate page needs
+ * to name the participants and the browser cannot read `.env`; per CLAUDE.md the fix
+ * for "the UI needs a fact that is in neither source" is to write it into the state
+ * file, not to stand up a backend. Seeds never leave `.env`.
+ */
+function cmdAccounts() {
+  const w = loadWallets()
+  const state = loadState()
+  state.accounts = Object.fromEntries(ROLE_NAMES.map((role) => [role, w[role].classicAddress]))
+  state.credentialType = credentialType()
+  saveState(state)
+  for (const role of ROLE_NAMES) console.log(`  ${role.padEnd(18)} ${w[role].classicAddress}`)
+  console.log('\nWritten to state/hackathon.json and public/state.json.')
+}
+
 async function cmdSetup() {
   const client = await getClient()
   const w = loadWallets()
+  cmdAccounts()
 
   const issuanceId = await stablecoin.issueStablecoin(client, w.issuer)
   for (const role of ['manager', 'sme', 'smeUncredentialed', 'investorA', 'investorB', 'insurer'] as const) {
@@ -165,7 +184,7 @@ async function cmdFull() {
 async function main() {
   const command = process.argv[2]
   if (!command) {
-    console.error('Usage: npm run demo <setup|prestage|s1..s10|gate|full|verify|reset>')
+    console.error('Usage: npm run demo <setup|accounts|prestage|s1..s10|gate|full|verify|reset>')
     process.exitCode = 1
     return
   }
@@ -173,6 +192,11 @@ async function main() {
   if (command === 'reset') {
     resetState()
     console.log('state/hackathon.json reset.')
+    return
+  }
+
+  if (command === 'accounts') {
+    cmdAccounts()
     return
   }
 

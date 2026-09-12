@@ -151,3 +151,420 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0
 .steps { margin: 0; padding-left: 20px; font-size: 13.5px; color: var(--muted); }
 .steps li { margin-bottom: 8px; }
 .steps code { color: var(--text); }
+
+/* ---------- routing chrome ---------- */
+
+/* Home and Gate carry prose and tables; the dashboard's panel grid reads better narrow. */
+.app-wide { max-width: 960px; }
+
+.header h1 a { color: inherit; text-decoration: none; }
+
+.nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: -14px;
+}
+
+.nav-link {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.nav-link:hover { color: var(--text); }
+
+.nav-link-active {
+  color: var(--text);
+  border-color: var(--border);
+  background: var(--panel);
+}
+
+/* ---------- landing page ---------- */
+
+.home { display: flex; flex-direction: column; gap: 22px; }
+
+.hero { padding: 10px 0 6px; }
+
+.eyebrow { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 20px; }
+
+.hero-title {
+  margin: 0 0 18px;
+  font-size: clamp(26px, 4.6vw, 40px);
+  line-height: 1.15;
+  letter-spacing: -0.025em;
+  font-weight: 700;
+  max-width: 17ch;
+}
+
+.hero-title-accent { display: block; color: var(--accent); }
+
+.hero-lede {
+  margin: 0 0 24px;
+  max-width: 62ch;
+  font-size: 16px;
+  color: #b9c4d6;
+}
+
+.hero-actions-note { font-size: 12.5px; align-self: center; }
+
+.actions { align-items: center; }
+
+.section-title {
+  margin: 0 0 14px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.section-note { font-size: 13px; margin-top: 14px; max-width: 72ch; }
+.section-note code { color: #b9c4d6; }
+
+.grid-auto {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+/* Four roles, so a fixed 2x2 rather than auto-fit — three columns leaves the
+   insurer alone on an empty second row at the container's width. */
+.roles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 620px) {
+  .roles { grid-template-columns: 1fr; }
+}
+
+/* the 90-day hole */
+
+.wait { display: flex; flex-direction: column; gap: 12px; }
+
+.wait-row {
+  display: grid;
+  grid-template-columns: 78px minmax(90px, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  font-size: 13px;
+}
+
+.wait-name { color: var(--muted); }
+
+.wait-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: #1a2030;
+  overflow: hidden;
+}
+
+.wait-fill { display: block; height: 100%; border-radius: 999px; }
+.wait-fill-slow { width: 100%; background: linear-gradient(90deg, #3a2a20, var(--warn)); }
+.wait-fill-fast { width: 5%; min-width: 10px; background: var(--ok); }
+
+.wait-value { color: var(--muted); }
+
+@media (max-width: 560px) {
+  .wait-row { grid-template-columns: 1fr; gap: 6px; }
+}
+
+/* roles */
+
+.role { display: flex; flex-direction: column; }
+.role .status { margin-bottom: 10px; }
+.role-emphasis { border-color: #2c3a55; }
+
+.role-line { margin: 0 0 12px; font-size: 13.5px; color: #b9c4d6; }
+.role-line code { color: var(--text); }
+.role-line strong { color: var(--text); }
+
+.role-txs { margin: auto 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+
+.role-txs code {
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* native primitives */
+
+.panel-native { border-color: #2c3a55; }
+
+.primitives { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+
+.primitives li {
+  display: grid;
+  grid-template-columns: 76px 180px 1fr;
+  gap: 12px;
+  align-items: baseline;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.primitive-xls { color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.primitive-name { font-weight: 600; }
+
+@media (max-width: 560px) {
+  .primitives li { grid-template-columns: 76px 1fr; }
+  .primitives li .muted { grid-column: 2; }
+}
+
+.cycle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 20px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.cycle-step {
+  display: inline-block;
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #161c28;
+  font-size: 12.5px;
+}
+
+.cycle-arrow { color: var(--muted); margin: 0 6px; }
+
+/* findings teaser + scope */
+
+.steps-findings { color: #b9c4d6; }
+.steps-findings li { margin-bottom: 12px; }
+.steps-findings strong { color: var(--text); }
+
+.panel-scope { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.panel-scope code { color: #b9c4d6; }
+
+/* ---------- dashboard ---------- */
+
+.dash { display: flex; flex-direction: column; gap: 16px; }
+
+.dash-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dash-head h2 { margin: 0; font-size: 16px; letter-spacing: -0.01em; }
+.dash-head-right { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+.chip-ok { color: var(--ok); border-color: #1f4536; }
+.chip-warn { color: var(--warn); border-color: #3a3320; }
+.chip-inline { margin-left: 8px; font-size: 11px; padding: 2px 8px; }
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.panel-hero { border-color: #2c3a55; }
+
+.status-warn { color: var(--warn); }
+.status-warn .dot { background: var(--warn); box-shadow: 0 0 0 4px rgb(255 180 84 / 0.14); }
+.status-err { color: var(--err); }
+.status-err .dot { background: var(--err); box-shadow: 0 0 0 4px rgb(255 107 107 / 0.14); }
+.status-sep { color: var(--border); }
+.status { flex-wrap: wrap; }
+
+.hero-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.hero-metric-label { font-size: 12.5px; }
+
+.value {
+  font-variant-numeric: tabular-nums;
+  border-radius: 5px;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+.value-big { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; }
+.value-ok { color: var(--ok); }
+.value-warn { color: var(--warn); }
+.value-err { color: var(--err); }
+
+/* A figure that just changed is lit briefly — during the s9 default trigger the
+   cushion and LossUnrealized both move at once and neither should slip past. */
+.flash { animation: flash 1.4s ease-out; }
+
+@keyframes flash {
+  0% { background-color: rgb(79 140 255 / 0.35); box-shadow: 0 0 0 4px rgb(79 140 255 / 0.35); }
+  100% { background-color: transparent; box-shadow: 0 0 0 4px transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flash { animation: none; outline: 1px solid var(--accent); }
+}
+
+.fields-wide { grid-template-columns: 118px 1fr; }
+.fields dd .muted { font-size: 12px; }
+
+.panel-note { font-size: 12.5px; margin-top: 14px; }
+.panel-note code { color: #b9c4d6; }
+
+/* first-loss cover bar */
+
+.cover-bar {
+  position: relative;
+  height: 12px;
+  border-radius: 999px;
+  background: #1a2030;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.cover-fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #2a6b52, var(--ok));
+  transition: width 0.6s ease;
+}
+
+.cover-fill-short { background: linear-gradient(90deg, #5a2a2a, var(--err)); }
+
+/* The minimum-cover threshold, so "the cushion drained past the line" is visible
+   rather than something the presenter has to assert. */
+.cover-mark {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--text);
+  opacity: 0.65;
+}
+
+.cover-legend { font-size: 12px; margin-bottom: 16px; }
+
+/* event feed */
+
+.feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+
+.feed li {
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+  color: #b9c4d6;
+  align-items: baseline;
+}
+
+.feed-ts {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  flex: none;
+}
+
+.feed-good span:last-child { color: var(--ok); }
+.feed-warn span:last-child { color: var(--warn); }
+.feed-bad span:last-child { color: var(--err); }
+
+.dash-foot { font-size: 12px; line-height: 1.6; }
+.dash-foot code { color: #b9c4d6; }
+
+/* ---------- gate ---------- */
+
+.page-lede {
+  margin: 0;
+  max-width: 78ch;
+  font-size: 14.5px;
+  color: #b9c4d6;
+}
+
+.page-lede code { color: var(--text); }
+
+/* Tables are the one thing allowed to scroll sideways on a narrow screen. */
+.table-scroll { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 14px 8px 0;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 10px 14px 10px 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.table tr:last-child td { border-bottom: none; }
+.table .num { text-align: right; font-variant-numeric: tabular-nums; padding-right: 20px; }
+.table a { color: var(--accent); text-decoration: none; }
+.table a:hover { text-decoration: underline; }
+
+/* The withdrawal row: the one the whole design choice rests on. */
+.row-mark td { background: rgb(61 220 151 / 0.06); }
+.row-mark td:first-child { box-shadow: inset 2px 0 0 var(--ok); }
+
+.row-note {
+  display: block;
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: 3px;
+  max-width: 42ch;
+}
+
+.cred-chip {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.cred-ok { color: var(--ok); border-color: #1f4536; background: rgb(61 220 151 / 0.08); }
+.cred-warn { color: var(--warn); border-color: #3a3320; background: rgb(255 180 84 / 0.08); }
+.cred-off { color: var(--muted); }
+
+.cred-where {
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: normal;
+  margin-top: 2px;
+}
+
+.code-ok { color: var(--ok); }
+.code-err { color: var(--err); }
+.code-warn { color: var(--warn); }
+.code-muted { color: var(--muted); }
+
+/* Needs to outrank `.fields dd`, which centres its flex items. */
+.fields dd.accepts { flex-direction: column; align-items: flex-start; gap: 4px; }
+
+.matrix-sub { font-size: 12.5px; margin: -6px 0 16px; }
+.matrix-sub code { color: #b9c4d6; }
+
+.rule { border: none; border-top: 1px solid var(--border); margin: 22px 0 18px; }
+
+.panel-finding { border-color: #3a3320; }
