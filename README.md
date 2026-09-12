@@ -75,6 +75,7 @@ Other commands:
 | Command | What it does |
 |---|---|
 | `npm run demo gate` | The Phase 2 evidence pass on its own — walks one account through every credential state (none → issued-not-accepted → accepted → revoked), records what the ledger answers at each, probes the borrow side, prints the access matrix. Idempotent, so it can be re-run for a second confirmation. |
+| `npm run demo referee` | Publishes the open protection market's conditions and reveals the fulfillment for any loan the ledger says has defaulted. Idempotent. |
 | `npm run demo full` | `setup` → `s1` → `s2` → `prestage` → `s3`…`s10` end to end, including the real wall-clock wait for Loan B to become defaultable. A rehearsal, not the stage run. |
 | `npm run demo reset` | Wipes `state/hackathon.json` only. Never touches the ledger — a fresh `setup` afterwards creates brand-new on-chain objects. |
 | `npm run dev` | The read-only webapp on `localhost:5173`. |
@@ -217,6 +218,7 @@ over a `hashchange` listener (`src/ui/lib/router.ts`), which also means the page
 | `/dashboard` | Dashboard | Share price, `AssetsTotal`/`AssetsAvailable`, `LossUnrealized`, the cushion against `CoverRateMinimum`, both loans with their flags and grace countdown, the insurance state, and a ledger-close feed |
 | `/gate` | The Gate | Every role account with its live credential state and TFEUR balance, plus the four-state access matrix with hashes |
 | `/insurance` | Protection | The escrow as a diagram, its live state, and the wall — the trusted party named on screen, not implied |
+| `/market` | Market | The open protection market — the one screen that submits from the browser (this branch only, see below) |
 | `/explorer` | Explorer | Every transaction the demo produced, newest first; deliberate refusals labelled as such, anything else counted as an unexpected failure |
 | `/findings` | Findings | The three findings as cards, each with repro command, hashes and proposed fix |
 
@@ -226,10 +228,60 @@ the transaction log. Everything else is a live RPC query or the `ledger` subscri
 `NETWORK.wss`. If a page needs a fact in neither, the fix is to write it into the state file from
 the protocol scripts, not to add a server.
 
-**It is read-only by construction, and that is worth saying on stage:** the browser holds no key,
-`LoanSet` needs two signatures, and a visitor's wallet holds no `Credential` — so a deposit from
-it would land `tecNO_AUTH`, the gate working correctly but indistinguishable from a broken app.
-The `xrpl-connect` widget on Home shows a connected account and nothing else.
+**Every screen but one is read-only by construction, and that is worth saying on stage:** the
+browser holds no protocol key, `LoanSet` needs two signatures, and a visitor's wallet holds no
+`Credential` — so a deposit from it would land `tecNO_AUTH`, the gate working correctly but
+indistinguishable from a broken app. The `xrpl-connect` widget on Home shows a connected account
+and nothing else.
+
+The exception is `/market`, added on this branch — see below.
+
+### The open protection market (`/market`)
+
+A policy is an `EscrowCreate` over the visitor's **own XRP**, single-signed, carrying a
+crypto-condition the referee published. None of the three reasons above applies to it: no
+protocol key is involved, nothing needs a second signature, and escrows are not gated by the
+vault's `PermissionedDomain` — the same asymmetry [finding 2](#2-a-private-vault-gates-deposits-but-not-loans)
+reports, seen from the other side and wanted here rather than a gap. So this screen signs, and
+every other screen still does not.
+
+```bash
+npm run demo referee   # publish a condition per loan; reveal the fulfillment for any loan
+                       # the ledger says has defaulted. Idempotent — safe to loop.
+```
+
+| Action | Transaction | Who can send it |
+|---|---|---|
+| Write a policy | `EscrowCreate` (XRP, condition, `CancelAfter`, buyer as `Destination`) | any connected wallet |
+| Pay a premium | `Payment` with a `trustflow/premium` memo | the buyer |
+| Claim on default | `EscrowFinish` with the revealed fulfillment | **anyone** — the cover goes to the `Destination` regardless of the sender |
+| Reclaim on expiry | `EscrowCancel` after `CancelAfter` | **anyone** — the cover returns to the seller |
+
+Verified end to end on the devnet, through the page's own code path (`lib/walletTx.ts`) with a
+stub signer standing in for the wallet popup:
+
+| Action | Result | Hash |
+|---|---|---|
+| `EscrowCreate` — a policy written on loan B | `tesSUCCESS` | `6A9E03DEC36EDD3793ED6C3E45E1224C24B64C5F91BB0F2A9227289A0EFF48A0` |
+| `Payment` — premium, with the memo | `tesSUCCESS` | `875773F31E5421C78CA64C10BACE41B3AF357255134BD6943505AC26F262E1B2` |
+| `EscrowFinish` — claimed by a third party, paid to the buyer | `tesSUCCESS` | `6E2BFCAC12A6CAA320EAAE414FCF3D5707D06DCC3AFA01D31C0595756706A419` |
+| `EscrowCancel` — reclaimed by a third party after expiry | `tesSUCCESS` | `BCA26D7049E8CA17C8551534CB48ABC9B75303E88230541E70D237048963042B` |
+
+XRP and not TFEUR on purpose: a visitor holds XRP and can get more from the faucet, while TFEUR
+needs an `MPTokenAuthorize` plus a payout signed by the issuer's key, which no browser has. The
+demo's own policy stays TFEUR-denominated through TokenEscrow, so both paths exist in the repo.
+
+**The fulfillment is a secret, and the state file now treats it as one.** `public/state.json` is
+served to anyone who opens the site, so `publicView()` in `src/protocol/lib/state.ts` strips every
+unrevealed fulfillment out of the browser's copy. Publishing it early would let any visitor finish
+a policy before the loan it insures had defaulted.
+
+**What it demonstrates, and it is not a happy ending:** every position on that page settles
+because one named account chooses to publish a preimage. They can publish it early, or never, and
+the protocol neither prevents nor records either. The page says so on itself, next to the
+referee's address. That is [finding 1](#1-no-lock-can-trigger-on-another-ledger-objects-state)
+with strangers' money behind it, and it is the argument for a lock that can read another ledger
+object's field.
 
 All six routes have been walked in a browser against the live devnet: the WebSocket connects, the
 ledger-close feed ticks, balances and credential states are read per account, and no page throws.
