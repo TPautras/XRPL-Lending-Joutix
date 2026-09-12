@@ -1,40 +1,94 @@
-# TrustFlow — invoice factoring + credit insurance on XRPL
+# TrustFlow
 
-**Hackathon:** XRPL Lending Protocol — DeVinci Blockchain × Ripple, Nanterre, 2026-09-12/13.
-**Track:** 1 (open-ended vault, Lending Protocol V1) · **Flavour:** Loaded
-**Environment:** Custom Hackathon Devnet (`rippled 3.4.0-rc1`, network_id `4001`)
-**Library:** `xrpl@5.2.0` (stable)
+**Invoice factoring + credit insurance on the XRP Ledger.** An SME ships, invoices, and waits
+60–90 days to get paid. TrustFlow pays it immediately: investors pool capital in a shared
+reserve, a manager decides which invoices to fund by putting their own money in first-loss, and
+an insurer covers the default risk on a given loan.
 
-An SME ships, invoices, and waits 60–90 days to get paid. TrustFlow pays it immediately:
-investors pool capital in a shared reserve, a manager selects which invoices to fund by
-putting their own money first-loss, and an insurer covers default risk on a given loan.
-Every step — deposit, loan, repayment, default, payout — is native XLS-65 (Single Asset
-Vault) + XLS-66 (Lending Protocol), coupled with Credentials, a Permissioned Domain, and
-a TokenEscrow-based credit-insurance overlay. No custom contracts.
+Every step — deposit, loan, repayment, default, payout — is native XLS-65 (Single Asset Vault)
+and XLS-66 (Lending Protocol), coupled with Credentials, a Permissioned Domain and TokenEscrow.
+**No custom contracts, no backend, no server-side state.**
 
-Full design rationale, the roles, and the build plan live in [`CLAUDE.md`](./CLAUDE.md).
+| | |
+|---|---|
+| **Hackathon** | XRPL Lending Protocol — DeVinci Blockchain × Ripple, Nanterre, 2026-09-12/13 |
+| **Track / flavour** | Track 1 (open-ended vault, Lending Protocol V1) · Loaded |
+| **Network** | Custom Hackathon Devnet — `rippled 3.4.0-rc1`, `network_id 4001` |
+| **Library** | `xrpl@5.2.0` · React 19 + Vite 7 · Node 20+ |
+| **Evidence** | [Verified transactions](#verified-on-ledger-evidence) · [Findings](#what-we-found) · [`FEEDBACK_REPORT.md`](./FEEDBACK_REPORT.md) · [`docs/FRICTION.md`](./docs/FRICTION.md) |
 
-## Status
+---
 
-| Phase | What | State |
+## The four roles
+
+| Role | Does | On-ledger |
 |---|---|---|
-| 0 — probe | Confirm amendments live, fund accounts, issue the demo stablecoin | ✅ verified against the live devnet (`npm run probe`) |
-| 1 — minimum bar | Reserve → deposit → loan → repayment → withdrawal, plus one rejected guardrail tx | ✅ verified end to end, real tx hashes below |
-| 2 — the gate | Credential-gated vault; an uncredentialed account is refused | ✅ verified against the live devnet — `s8` and the full four-state proof (`npm run demo gate`), tx hashes below |
-| 3 — the twist | Credit insurance via TokenEscrow (`s5`, `s9`, `prestage`) | ✅ verified end to end against the live devnet, tx hashes below |
+| **Investor** (A, B) | Deposits into the shared reserve, holds a share of it | `VaultDeposit` · vault shares (MPT) |
+| **Manager** (broker) | Picks which invoices to fund, posts first-loss capital before lending | `LoanBrokerSet` · `LoanBrokerCoverDeposit` |
+| **SME** (borrower) | Borrows against an invoice, repays on schedule | `LoanSet` (dual-signed) · `LoanPay` |
+| **Insurer** | Sells default protection on one loan, locks the covered amount, keeps the premium if the loan performs | `EscrowCreate` / `EscrowFinish` / `EscrowCancel` |
+| **Authority** | Issues the compliance credential the reserve requires | `CredentialCreate` · `PermissionedDomainSet` |
 
-Two real bugs surfaced and were fixed while verifying Phase 1 — both are ledger/spec behavior, not
-typos, and are detailed in `docs/FRICTION.md` and `FEEDBACK_REPORT.md`:
+Share value rises mechanically as the reserve collects interest — there is no distribution
+transaction, the appreciation is in the share price itself (`AssetsTotal` growth).
 
-1. `LoanSet`'s `PrincipalRequested` field disburses **raw base units**, not display-scaled units —
-   passing the real EUR magnitude directly put 100x too little TFEUR in the borrower's account.
-2. `LoanPay` with `tfLoanFullPayment` returns `tecKILLED` when `Loan.PaymentRemaining == 1` — the
-   last installment of any loan must be paid as a regular payment instead (XLS-66 §3.11.2).
+**The gate.** Every participant needs a `Credential` accepted by a `PermissionedDomain` before
+they can deposit. **Withdrawal is deliberately left ungated** — an investor whose credential
+expires must never be locked out of their own funds. That asymmetry is a ledger guarantee
+(XLS-65 §7), not our leniency, and it is proven on-ledger in the [gate table](#phase-2--the-gate)
+below.
 
-### Verified transactions (Phase 1 run, 2026-09-12)
+---
 
-All from the live Custom Hackathon Devnet — `<hash>` resolves at
+## Quick start
+
+```bash
+npm install
+cp .env.example .env
+
+npm run probe          # Phase 0: checks the amendments are live, funds any missing role
+                       # account, prints seeds to paste back into .env
+npm run demo setup     # TFEUR stablecoin, credential domain, private vault, loan broker
+```
+
+Then the demo itself. **Order matters** — see the note below:
+
+```bash
+npm run demo s1        # authority issues the credentials
+npm run demo s2        # investors deposit — the reserve now has liquidity
+npm run demo prestage  # manager's cover, Loan B, protection sold on it
+                       # prints the ledger time at which Loan B becomes defaultable (~3 min)
+
+npm run demo s3        # ... and on through s10, the on-stage steps
+npm run demo verify    # re-read every object and check the invariants
+```
+
+> [!IMPORTANT]
+> **`s1` and `s2` must land before `prestage`.** A loan draws its principal from the vault, so
+> `LoanSet` against a reserve nobody has deposited into is refused with `tecINSUFFICIENT_FUNDS`
+> — a code that names the signer's funds when the shortfall is actually the vault's. `s1` and
+> `s2` are safe to re-run live for the audience: `issueCredential()` is idempotent, and a second
+> deposit simply adds more liquidity.
+
+Other commands:
+
+| Command | What it does |
+|---|---|
+| `npm run demo gate` | The Phase 2 evidence pass on its own — walks one account through every credential state (none → issued-not-accepted → accepted → revoked), records what the ledger answers at each, probes the borrow side, prints the access matrix. Idempotent, so it can be re-run for a second confirmation. |
+| `npm run demo full` | `setup` → `s1` → `s2` → `prestage` → `s3`…`s10` end to end, including the real wall-clock wait for Loan B to become defaultable. A rehearsal, not the stage run. |
+| `npm run demo reset` | Wipes `state/hackathon.json` only. Never touches the ledger — a fresh `setup` afterwards creates brand-new on-chain objects. |
+| `npm run dev` | The read-only webapp on `localhost:5173`. |
+| `npm run typecheck` | `tsc` over both the UI and the protocol scripts. |
+
+---
+
+## Verified on-ledger evidence
+
+All hashes are from the live Custom Hackathon Devnet and resolve at
 `https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/<hash>`.
+The `/explorer` page in the webapp renders the same log, live, newest first.
+
+### Phase 1 — the minimum bar
 
 | Step | Transaction | Result | Hash |
 |---|---|---|---|
@@ -42,10 +96,10 @@ All from the live Custom Hackathon Devnet — `<hash>` resolves at
 | `setup` | `LoanBrokerSet` | `tesSUCCESS` | `B952C9D3A85878B86DFA9421B0A0B8E04BF78177C502C1AE5110788096138F49` |
 | `s4` | `LoanSet` (dual-signed) | `tesSUCCESS` | `C7B2620D41A46094A60A2E53527808CDE0C31F1A3A18D7AD0DE22A0F3C1CAAF2` |
 | `s6` | `LoanPay` (full repayment) | `tesSUCCESS` | `B1F6E04DDCF1819656273A6414B2453C88F79844D027A1E3EB6B0D35E008DF08` |
-| `s7` | `VaultWithdraw` (deliberate over-withdraw) | `tecINSUFFICIENT_FUNDS` (expected) | `11C963A77DA075B56D0752DF5C23999F5E3C4B7418D3C6E0EE69B3FF5E55A6E3` |
+| `s7` | `VaultWithdraw` — deliberate over-withdraw | `tecINSUFFICIENT_FUNDS` *(the point)* | `11C963A77DA075B56D0752DF5C23999F5E3C4B7418D3C6E0EE69B3FF5E55A6E3` |
 | `s10` | `VaultWithdraw` | `tesSUCCESS` | `329502AA4C885AD67DA28F3F468B984A7ED3F186AC91B120D5464D482B1798C3` |
 
-### Verified transactions (Phase 2 — the gate, 2026-09-12)
+### Phase 2 — the gate
 
 One account (`rDyibrtuGLxhscYJ59fpV3Tq2JzZb2WZ7G`) walked through every credential state against
 the private vault `8B3F561021ED…CE7261`. Reproduce with `npm run demo gate`; the run below is the
@@ -60,235 +114,229 @@ second of two that produced identical results.
 | revoked | `VaultDeposit` | `tecNO_AUTH` | `8E1B2240CDBD0C70AD445CF12FB5FEA183551B943B53F6ECA67A382251FF7EE2` |
 | revoked | `VaultWithdraw` | `tesSUCCESS` | `58DCF5361D030D7142102889D94DC732FD3D52B63EDB6060F18706DB7C603B38` |
 
-Three things this table establishes, each on-ledger rather than asserted in code:
+Three things this establishes on-ledger rather than in code:
 
-1. **An issued-but-unaccepted credential grants nothing.** The `Credential` object exists and the
-   holder is still refused, exactly as if it did not — `CredentialAccept` is not optional
-   bookkeeping. This is the easiest way to build a gate that silently refuses everyone.
-2. **Revocation closes the door without trapping anyone.** Refused in, served out. XLS-65 §7 makes
-   this a ledger guarantee, so it is a property of the protocol, not of our code.
-3. ⚠️ **The gate does not extend to borrowing.** `LoanSet` succeeded for the account the same vault
-   refused in the immediately preceding transaction. See the gaps section below and
-   `FEEDBACK_REPORT.md` §2.
+1. **An issued-but-unaccepted credential grants nothing.** The `Credential` object exists and its
+   holder is still refused, exactly as if it did not — `CredentialAccept` is load-bearing, not
+   bookkeeping. Skipping it is the easiest way to build a gate that silently refuses everyone.
+2. **Revocation closes the door without trapping anyone.** Refused on the way in, served on the
+   way out.
+3. ⚠️ **The gate does not extend to borrowing** — see [finding 2](#2-a-private-vault-gates-deposits-but-not-loans).
 
-The on-stage step `s8` is the short version of the same thing:
+The on-stage step `s8` is the short version of the same thing, with the intruder funded first so
+the refusal is unambiguously about the credential and not an empty balance:
 
 | Step | Transaction | Result | Hash |
 |---|---|---|---|
-| `s8` | `VaultDeposit` by a **funded** uncredentialed account | `tecNO_AUTH` (expected) | `A7F1DEB1ADF4FD7A912AA5114F14E9553537573C2DE0168058CCCF4F820E3D27` |
-| `s8` | `CredentialDelete` (investor's credential revoked) | `tesSUCCESS` | `C02CFE069D225C5E0554D8AB1B0680CFD0E089116FB404A641E4DA5D71337489` |
-| `s8` | `VaultDeposit` after revocation | `tecNO_AUTH` (expected) | `037C701A3B549B7D5EA7573E706B643E3C6DDF4FEDC06002CCBF1DA4511C5165` |
+| `s8` | `VaultDeposit` by a **funded** uncredentialed account | `tecNO_AUTH` *(the point)* | `A7F1DEB1ADF4FD7A912AA5114F14E9553537573C2DE0168058CCCF4F820E3D27` |
+| `s8` | `CredentialDelete` — an investor's credential revoked | `tesSUCCESS` | `C02CFE069D225C5E0554D8AB1B0680CFD0E089116FB404A641E4DA5D71337489` |
+| `s8` | `VaultDeposit` after revocation | `tecNO_AUTH` *(the point)* | `037C701A3B549B7D5EA7573E706B643E3C6DDF4FEDC06002CCBF1DA4511C5165` |
 | `s8` | `VaultWithdraw` after revocation — **still works** | `tesSUCCESS` | `AE48D99C42BF9D9F7F4A8BD4CEAD4BC748665070B98529B5B9AB2C92DD7F0359` |
 
-### Verified transactions (Phase 3 — the twist, 2026-09-12)
+### Phase 3 — the credit insurance
 
-`prestage` sells protection on Loan B; `s5` pays a premium; once Loan B's grace period lapses, `s9`
-impairs and defaults it and the manager (the referee holding the crypto-condition fulfillment)
-releases the escrow to the protection buyer.
+`prestage` sells protection on Loan B; `s5` pays a premium; once Loan B's grace period lapses,
+`s9` impairs and defaults it, and the manager — the named referee holding the crypto-condition's
+fulfillment — releases the escrow to the protection buyer.
 
 | Step | Transaction | Result | Hash |
 |---|---|---|---|
-| `prestage` | `EscrowCreate` (insurer locks covered amount) | `tesSUCCESS` | `8176143DD6D6F34FD90D7CA291E2DB1A4B34217B7F98574F6EC9FF24F7C1F8BD` |
+| `prestage` | `EscrowCreate` (insurer locks the covered amount) | `tesSUCCESS` | `8176143DD6D6F34FD90D7CA291E2DB1A4B34217B7F98574F6EC9FF24F7C1F8BD` |
 | `s5` | `Payment` (premium, buyer → insurer) | `tesSUCCESS` | `F893A293EDAD84B2061F26CD49B104F1DB9DB5890C48FEB335A43BADE3D4DE6F` |
 | `s9` | `LoanManage` (`tfLoanImpair`) | `tesSUCCESS` | `807EE4DF021A59A4555D1FD1CC76C081DD7164C9ED54CBF0E510CD911334EEF5` |
 | `s9` | `LoanManage` (`tfLoanDefault`) | `tesSUCCESS` | `4F8324E976FCCDDA18D629446E4E53FBFC619A34C9176257AA38C62FE47A7536` |
-| `s9` | `EscrowFinish` (manager reveals fulfillment) | `tesSUCCESS` | `8C6658F773FAC83F3F0A6D869E8098D9729954DAD7E7919CB10C348D39DD7F1E` |
+| `s9` | `EscrowFinish` (manager reveals the fulfillment) | `tesSUCCESS` | `8C6658F773FAC83F3F0A6D869E8098D9729954DAD7E7919CB10C348D39DD7F1E` |
 
-One real bug surfaced rehearsing this phase, detailed in `docs/FRICTION.md`:
-`five-bells-condition`'s `PreimageSha256` constructor silently ignores a `{ preimage }` options
-object (the base `Fulfillment` constructor takes none) — the preimage must be set via
-`f.setPreimage(preimage)` after construction, or `getConditionBinary()`/`serializeBinary()` throw
-`MissingDataError` later, decoupled from the actual mistake.
+---
 
-A second, non-protocol issue surfaced immediately after: `s10`'s hardcoded withdrawal amounts
-assumed the share price stays at or above 1. Loan B's default was only partly absorbed by the
-manager's cushion, so the share price dropped below 1 and re-requesting the original deposit face
-value overdrew the investors' actual entitlement (`tecINSUFFICIENT_FUNDS`). Fixed by
-`flows/vault.ts`'s new `withdrawMax()`, which redeems exactly what the caller's shares are worth
-right now instead of a fixed amount.
+## What we found
 
-## Roles
+The three headline findings, each reproducible with one command. Full write-ups, severities and
+proposed fixes are in [`FEEDBACK_REPORT.md`](./FEEDBACK_REPORT.md); the raw timestamped log is
+[`docs/FRICTION.md`](./docs/FRICTION.md). The `/findings` page renders the same three.
 
-| Role | Does |
-|---|---|
-| Investor (A, B) | Deposits into the shared reserve, gets a share back |
-| Manager (broker) | Picks which invoices to fund; posts first-loss capital before lending |
-| SME (borrower) | Borrows against an invoice, repays on schedule |
-| Insurer | Sells default protection on a specific loan via a TokenEscrow |
-| Authority | Issues the compliance credential that gates the reserve |
+### 1. No lock can trigger on another ledger object's state
 
-## Setup
+TokenEscrow releases on a time condition or a crypto-condition fulfillment — **never** on the
+state of another ledger object. Credit insurance has to pay out exactly when a `Loan` is marked
+defaulted by `LoanManage tfLoanDefault`, and nothing in the protocol lets an `Escrow` observe
+that flag. Our workaround is a named, disclosed trusted party: the manager holds the
+fulfillment and reveals it with `EscrowFinish` once they have recorded the real default
+on-ledger.
 
-```bash
-npm install
-cp .env.example .env
-npm run probe   # confirms the required amendments are live, funds any missing/low account
-npm run demo setup
-npm run demo prestage   # ~5 min before you plan to run the live steps
-npm run demo s1
-npm run demo s2
-# ... through s10
-npm run demo verify
+**Conclusion, stated plainly: a genuinely trustless credit derivative is not buildable on XRPL
+today.** What is missing is a lock that can reference another object's field — squarely in the
+territory of the programmable-locks / sponsor-signing work already in progress, for which credit
+insurance is a concrete motivating example. *(`FEEDBACK_REPORT.md` §1)*
+
+### 2. A private vault gates deposits but not loans
+
+Marking a vault private permissions the capital coming **in** and not the credit going **out**.
+XLS-65 §3.5.2.2 #6 refuses a `VaultDeposit` from a non-member of the share issuance's
+`PermissionedDomain`; XLS-66 §3.8.5.2 lists 24 failure conditions for `LoanSet` and none of them
+consults `MPTokenIssuance(Vault.ShareMPTID).DomainID`. Its two `tecNO_AUTH` cases are
+*asset-holding* authorization — a different question from domain membership.
+
+So an account the vault refused a deposit from was handed that same vault's assets as a loan in
+the very next transaction, in the same ledger state, reproduced identically on two independent
+runs (`npm run demo gate`).
+
+**This is not an exploit and we are not claiming one.** `LoanSet` is dual-signed, so the broker
+must still counter-sign and nobody originates a loan unilaterally. The claim is precisely this:
+with a `PermissionedDomain` configured, an uncredentialed borrower is stopped by the broker's
+off-ledger discretion alone, not by the protocol. *(`FEEDBACK_REPORT.md` §2)*
+
+### 3. `PrincipalRequested` is not scaled by the funding asset's `AssetScale`
+
+`PrincipalRequested` is a self-describing "Number" field, not an `MPTAmount`, so the natural
+reading is that it carries its own magnitude. In practice, against an MPT with `AssetScale: 2`,
+`PrincipalRequested: "2000"` disbursed 2,000 **raw base units** — €20.00, 100× less than
+intended — and `Loan.PrincipalOutstanding` read `"2000"` back, confirming the convention on both
+sides. No error, just a loan two orders of magnitude too small. *(`FEEDBACK_REPORT.md` §7)*
+
+### Also logged
+
+`LoanPay tfLoanFullPayment` → `tecKILLED` on a loan's last installment (§8) · no separate
+drawdown step (§3) · no `LoanTransfer`, so a `Loan` is permanently tied to the Broker+Borrower
+pair that dual-signed it (§4) · the two-party `LoanSet` fee ordering, and the correction that
+`autofill()` already handles it (§5) · the event faucet not matching xrpl.js's faucet contract
+(§6) · `MPToken` missing from xrpl.js's `LedgerEntry` union (§9) · `five-bells-condition`'s
+`PreimageSha256` silently dropping its constructor options (`docs/FRICTION.md` 18:05Z).
+
+---
+
+## The webapp
+
+`npm run dev` → `localhost:5173`. React 19 + Vite, no backend, no router library: six hash routes
+over a `hashchange` listener (`src/ui/lib/router.ts`), which also means the page still works from
+`file://` or a stale `vite preview` if the dev server dies mid-pitch.
+
+| Route | Page | Shows |
+|---|---|---|
+| `/` | Home | The problem, the four roles, the "no custom contracts" claim. Static — renders with the devnet down |
+| `/dashboard` | Dashboard | Share price, `AssetsTotal`/`AssetsAvailable`, `LossUnrealized`, the cushion against `CoverRateMinimum`, both loans with their flags and grace countdown, the insurance state, and a ledger-close feed |
+| `/gate` | The Gate | Every role account with its live credential state and TFEUR balance, plus the four-state access matrix with hashes |
+| `/insurance` | Protection | The escrow as a diagram, its live state, and the wall — the trusted party named on screen, not implied |
+| `/explorer` | Explorer | Every transaction the demo produced, newest first; deliberate refusals labelled as such, anything else counted as an unexpected failure |
+| `/findings` | Findings | The three findings as cards, each with repro command, hashes and proposed fix |
+
+**Two data sources, no third.** `public/state.json` — mirrored from `state/hackathon.json` by
+`saveState()` on every write — carries the object IDs, role addresses, the last gate matrix and
+the transaction log. Everything else is a live RPC query or the `ledger` subscription against
+`NETWORK.wss`. If a page needs a fact in neither, the fix is to write it into the state file from
+the protocol scripts, not to add a server.
+
+**It is read-only by construction, and that is worth saying on stage:** the browser holds no key,
+`LoanSet` needs two signatures, and a visitor's wallet holds no `Credential` — so a deposit from
+it would land `tecNO_AUTH`, the gate working correctly but indistinguishable from a broken app.
+The `xrpl-connect` widget on Home shows a connected account and nothing else.
+
+All six routes have been walked in a browser against the live devnet: the WebSocket connects, the
+ledger-close feed ticks, balances and credential states are read per account, and no page throws.
+
+---
+
+## Repo map
+
+```
+src/protocol/            everything that signs (Node, tsx)
+  probe.ts               Phase 0 — amendments, funding, balances
+  demo.ts                the step runner: setup · gate · prestage · s1..s10 · full · verify · reset
+  flows/                 one file per primitive — stablecoin, domain, credentials, vault,
+                         broker, loan, insurance, rejections, gate, report
+  lib/                   client, wallets, submit, MPT scaling, crypto-conditions, state I/O,
+                         friction logging
+src/ui/                  the read-only webapp (React 19 + Vite)
+  pages/ dashboard/      the six screens
+  lib/                   router, shared ledger socket, state polling, formatting, evidence
+state/hackathon.json     object IDs + tx log (gitignored) → mirrored to public/state.json
+docs/FRICTION.md         raw, timestamped friction log
+FEEDBACK_REPORT.md       the distilled developer feedback report (deliverable)
+CLAUDE.md                design rationale, build order, demo script, the rules
 ```
 
-`npm run demo gate` runs the Phase 2 evidence pass on its own: it walks one account through every
-credential state (none → issued-not-accepted → accepted → revoked), records what the ledger answers
-at each, probes the borrow side, and prints the access matrix reproduced above. It is idempotent —
-it resets the account to uncredentialed and tops up the balances and vault liquidity it needs — so
-it can be re-run for a second confirmation at any time.
+### Implementation notes
 
-`npm run dev` starts the read-only webapp on `localhost:5173` (see [Webapp](#webapp)) — six
-screens driven purely by ledger queries against the hackathon devnet plus the object IDs the
-scripts wrote to disk. It never signs anything; every transaction above is signed by the protocol
-scripts using the seeds in `.env`.
+**`state/hackathon.json` is the demo's own bookkeeping** — the object IDs that only exist *after*
+a transaction creates them (`vaultId`, `shareMptId`, `loanBrokerId`, loan IDs, the escrow's
+condition/fulfillment, the MPT issuance). Every `flows/*` function is idempotent against it: it
+checks state first and returns the existing object rather than re-submitting, so `createVault()`
+never creates a second vault on a re-run.
 
-`npm run demo full` runs `setup` + `prestage` + every step end to end, including the real
-wall-clock wait for Loan B to become defaultable — useful for a full rehearsal, not for
-the actual stage run (see `CLAUDE.md`'s stage-timing note).
+**Every transaction goes through `lib/submit.ts`**, which autofills, signs, waits for validation,
+and throws unless the engine result matches what was expected (`tesSUCCESS`, or an explicit code
+for the deliberate rejections in `flows/rejections.ts`). Each one prints a `✓`/`✗` line with the
+raw engine code and an explorer link. The single opt-in exception is `submit(…, { record: true })`,
+used only by the gate probes, where we genuinely do not know what the ledger will answer — that
+*is* the experiment. It still prints its code (marked `·`), so nothing is swallowed, only
+un-asserted.
 
-## Transactions used
+**Amount handling (`lib/mpt.ts`) is the sharpest edge here.** Two conventions coexist on purpose:
+`MPTAmount` fields (`VaultDeposit`/`VaultWithdraw`/`LoanPay` `Amount`, `Payment`, `EscrowCreate`)
+are base units, converted from a real EUR magnitude by `mptAmount()`/`mptBaseUnits()`; Loan
+"Number" fields (`PrincipalRequested`, `PrincipalOutstanding`, `TotalValueOutstanding`,
+`PeriodicPayment`) turn out to be base-unit denominated too, so `flows/loan.ts` scales
+`PrincipalRequested` on the way in and does *not* re-scale the others on the way out. In the UI,
+`src/ui/lib/format.ts` is the only place base units become euros — string arithmetic at the
+render edge, BigInt for anything derived from two ledger amounts, no float ever touching a ledger
+value.
+
+**Typings.** The UI reads the ledger through xrpl.js's own models (`import { LedgerEntry } from
+'xrpl'`, then `LedgerEntry.Loan`, `LedgerEntry.LoanFlags`, the typed `vault_info` request) and
+narrows on `LedgerEntryType` rather than casting. One cast survives, for `MPToken`, which is
+missing from the `LedgerEntry` union.
+
+**Friction logging (`lib/friction.ts`)** appends timestamped entries to `docs/FRICTION.md`
+automatically from the rejection flows, the gate probes and a few self-checks — written the
+moment something surprises us, not reconstructed afterwards.
+
+---
+
+## Demo cue sheet
+
+Every step below has landed against the live devnet; the hashes are in
+[Verified on-ledger evidence](#verified-on-ledger-evidence).
+
+1. `s1` — the authority issues compliance credentials to every legitimate participant.
+2. `s2` — both investors deposit into the reserve (20,000 + 15,000 TFEUR) and receive shares.
+3. `s3` — the manager tops up the first-loss cushion.
+4. `s4` — the SME originates Loan A (€2,000, dual-signed); the funds move immediately.
+5. `s5` — the investor pays the insurance premium on the protection pre-staged for Loan B.
+6. `s6` — the SME repays Loan A in full; the share price rises.
+7. `s7` — **break it on purpose**: an over-withdraw past available liquidity is refused
+   (`tecINSUFFICIENT_FUNDS`).
+8. `s8` — the gate, two beats. A funded but uncredentialed account is refused (`tecNO_AUTH`), so
+   the refusal is unambiguously about the credential. Then a real investor's credential is
+   revoked: refused on the way in, still paid on the way out. Name that as a design choice and a
+   ledger guarantee, not leniency.
+9. `s9` — Loan B, now overdue, is impaired and then defaulted; the manager's cushion absorbs the
+   loss first; the escrow releases to the protected investor. Run this against `/dashboard` —
+   the cushion draining and `LossUnrealized` moving is the visual payload of the demo.
+10. `s10` — investors withdraw capital plus yield, redeeming what their shares are worth *now*
+    (`withdrawMax()`), which after a default is not the face value they deposited.
+
+**Record a backup video.** Devnets reset without warning, and a live crash at 2pm costs more than
+the 20 minutes it takes to film a fallback.
+
+---
+
+## Deliverables
+
+- This README — project, setup, track, environment, library version, every XLS-65/66 transaction
+  used, and links to verified on-ledger transactions
+- [`FEEDBACK_REPORT.md`](./FEEDBACK_REPORT.md) — the developer feedback report
+- [`docs/FRICTION.md`](./docs/FRICTION.md) — the raw friction log it was distilled from
+- [`CLAUDE.md`](./CLAUDE.md) — design rationale, build order, and the rules this project holds
+  itself to (how the findings must be worded, why the webapp never signs)
+
+### Transactions used
 
 | Transaction | Where |
 |---|---|
-| `MPTokenIssuanceCreate`, `MPTokenAuthorize`, `Payment` | `flows/stablecoin.ts` — the demo TFEUR stablecoin |
-| `CredentialCreate`, `CredentialAccept`, `CredentialDelete` | `flows/credentials.ts` — the compliance gate, issuance and revocation |
+| `MPTokenIssuanceCreate`, `MPTokenAuthorize`, `Payment` | `flows/stablecoin.ts` — the demo TFEUR stablecoin (`AssetScale: 2`) |
+| `CredentialCreate`, `CredentialAccept`, `CredentialDelete` | `flows/credentials.ts` — the gate, issuance and revocation |
 | `PermissionedDomainSet` | `flows/domain.ts` |
 | `VaultCreate`, `VaultDeposit`, `VaultWithdraw` | `flows/vault.ts` — the shared reserve |
 | `LoanBrokerSet`, `LoanBrokerCoverDeposit` | `flows/broker.ts` — the manager's first-loss cushion |
 | `LoanSet` (dual-signed), `LoanPay`, `LoanManage` | `flows/loan.ts` — origination, repayment, impairment, default |
 | `EscrowCreate`, `EscrowFinish`, `EscrowCancel` | `flows/insurance.ts` — the credit-insurance overlay |
-
-Every run prints each transaction's engine result code and an explorer link
-(`https://custom.xrpl.org/lending-hackathon.dev.ripplex.io:51233/transactions/<hash>`).
-
-## How it works
-
-```
-src/protocol/
-  lib/        connection, wallets, signing/submit helpers, MPT scaling, state I/O
-  flows/      one file per on-ledger primitive — stablecoin, domain, credentials,
-              vault, broker, loan, insurance, rejections, gate, report
-  demo.ts     the step runner (see below)
-  probe.ts    Phase 0 — checks amendments, funds/prints missing account seeds
-```
-
-**`state/hackathon.json` is the single source of truth for the demo's own bookkeeping** — the
-object IDs (`vaultId`, `loanBrokerId`, loan IDs, the insurance escrow's condition/fulfillment,
-the MPT issuance ID) that only exist *after* a transaction creates them on-ledger. Every `flows/*`
-function is idempotent against it: it checks `state` first and returns the existing object instead
-of re-submitting (e.g. `createVault()` won't create a second vault on a re-run). `saveState()`
-mirrors the same file to `public/state.json` so the browser dashboard can read it — Vite can't
-statically import a file that doesn't exist yet at build time, so the dashboard polls it instead.
-
-**`demo.ts` is a thin CLI over `flows/*`**, one subcommand per step (`setup`, `prestage`, `s1`..`s10`,
-`gate`, `full`, `verify`, `reset`) matching `CLAUDE.md`'s demo script numbering 1:1 — see the cue sheet
-below for what each step does. `reset` only wipes the local state file; it never touches the ledger,
-so a fresh `setup` after a `reset` creates brand-new on-chain objects rather than reusing old ones.
-
-**Every submitted transaction goes through `lib/submit.ts`'s `submit()`/`submitBlob()`**, which
-autofills, signs, waits for validation, and throws unless the engine result matches what was
-expected (`tesSUCCESS` by default, or an explicit code passed via `opts.expect` for the deliberate
-rejections in `flows/rejections.ts`). This is what makes every run print a `✓`/`✗` line with the
-raw engine result code and an explorer link — per `CLAUDE.md`'s rule to never swallow a mismatched
-result silently.
-
-There is exactly one opt-in exception, `submit(..., { record: true })`, used only by the gate probes
-in `flows/gate.ts`: there we genuinely do not know what the ledger will answer — that *is* the
-experiment — so the result is returned instead of asserted. It still prints its raw engine code and
-explorer link (marked `·` rather than `✓`/`✗`), so nothing is swallowed, only un-asserted. Never
-reach for it to quiet a failing transaction.
-
-**Amount handling (`lib/mpt.ts`) is the sharpest edge in this codebase** — see the Status section
-above and `docs/FRICTION.md` for the two bugs this produced. Two different conventions coexist on
-purpose:
-- `MPTAmount` fields (`VaultDeposit`/`VaultWithdraw`/`LoanPay`'s `Amount`, `Payment`, `EscrowCreate`)
-  are always **base units** — `mptAmount()`/`mptBaseUnits()` convert a real EUR magnitude by
-  `10^TFEUR_SCALE` before it goes on the wire.
-- Loan "Number" fields (`PrincipalRequested`/`PrincipalOutstanding`/`TotalValueOutstanding`/
-  `PeriodicPayment`) are self-describing decimals that, empirically, **also** turn out to be
-  base-unit denominated for an MPT-funded loan — so `flows/loan.ts` scales `PrincipalRequested` on
-  the way in but does *not* re-scale `TotalValueOutstanding`/`PeriodicPayment` on the way out.
-
-**The webapp (`src/ui/`) is read-only by construction** — every ledger call goes through
-`lib/ledger.tsx`'s shared client and only ever uses `client.request()`. Nothing in the browser
-signs or submits, so it can run alongside a live demo with no risk of firing a transaction by
-accident. See [Webapp](#webapp) below.
-
-**Friction logging (`lib/friction.ts`)** appends timestamped entries to `docs/FRICTION.md`
-automatically from the rejection flows, the gate probes (`flows/gate.ts` logs whichever way the
-borrow-side experiment comes out, and would log a stranded-withdrawal too), and a couple of
-self-checks (e.g. the `PrincipalRequested` scale check in `originate()`) — manual entries use the
-same format for anything hit outside the scripts (docs, tooling, faucet).
-
-## Webapp
-
-`npm run dev` → `localhost:5173`. React 19 + Vite, no backend, no router library: six hash routes
-over a `hashchange` listener (`src/ui/lib/router.ts`), which also means the built page still works
-from `file://` or a stale `vite preview` if the dev server dies mid-pitch.
-
-| Route | Page | What it shows |
-|---|---|---|
-| `/` | Home | The problem, the four roles, the "no custom contracts" claim. Static — renders with the devnet down |
-| `/dashboard` | Dashboard | Share price, `AssetsTotal`/`AssetsAvailable`, `LossUnrealized`, the manager's cushion against `CoverRateMinimum`, both loans with their flags and grace-period countdown, the insurance state, and a ledger-close feed |
-| `/gate` | The Gate | Every role account with its live credential state and TFEUR balance, plus the four-state access matrix with hashes |
-| `/insurance` | Protection | The escrow as a diagram, its live state, and the wall: a lock cannot trigger on another object's state |
-| `/explorer` | Explorer | Every transaction the demo produced, newest first, refusals included and labelled as deliberate |
-| `/findings` | Findings | The three headline findings as cards, each with repro command, hashes and proposed fix |
-
-**Two data sources, no third.** `public/state.json` — mirrored from `state/hackathon.json` by
-`saveState()` on every write, so Vite serves it at `/state.json` — carries the object IDs, the role
-addresses, the last gate matrix and the transaction log. Everything else is a live RPC query or the
-`ledger` subscription against `NETWORK.wss`. If a page needs a fact in neither, the fix is to write
-it into the state file from the protocol scripts, not to add a server.
-
-**It is read-only on purpose, and that is worth saying on stage:** the browser holds no key,
-`LoanSet` needs two signatures, and a visitor's wallet holds no `Credential` — so a deposit from it
-would land `tecNO_AUTH`, the gate working correctly but indistinguishable from a broken app. The
-`xrpl-connect` widget on Home shows a connected account and nothing else.
-
-**Amounts.** `src/ui/lib/format.ts` is the only place base units become euros, as string
-arithmetic at the render edge (TFEUR is `AssetScale: 2`, so `AssetsTotal: "3500000"` is
-€35,000.00). Anything derived from two ledger amounts is BigInt. No float touches a ledger value.
-
-**Typings.** The UI reads the ledger through xrpl.js's own models — `import { LedgerEntry } from
-'xrpl'`, then `LedgerEntry.Loan`, `LedgerEntry.LoanFlags`, the typed `vault_info` request — and
-narrows on `LedgerEntryType` rather than casting. One cast survives, for `MPToken`, which is
-missing from the `LedgerEntry` union (`FEEDBACK_REPORT.md` §9).
-
-## Demo cue sheet
-
-`✅` = run against the live devnet and confirmed (see the verified-transactions table above).
-`⚙️` = implemented, not yet exercised end to end.
-
-1. ✅ `s1` — authority issues credentials to every legitimate participant.
-2. ✅ `s2` — both investors deposit into the reserve.
-3. ✅ `s3` — manager tops up the first-loss cushion.
-4. ✅ `s4` — SME originates Loan A (dual-signed); funds move immediately.
-5. ⚙️ `s5` — investor pays the insurance premium (protection on Loan B was pre-staged).
-6. ✅ `s6` — SME repays Loan A in full; share price rises.
-7. ✅ `s7` — an over-withdraw is rejected by the protocol (`tecINSUFFICIENT_FUNDS`).
-8. ✅ `s8` — two beats. An uncredentialed account, **visibly holding more TFEUR than it is trying
-   to deposit**, is refused (`tecNO_AUTH`) — so the refusal is unambiguously about the credential
-   and not the balance. Then an investor's credential is revoked: the same account is refused on
-   the way *in* and still served on the way *out* (`VaultWithdraw` → `tesSUCCESS`). That asymmetry
-   is TrustFlow's headline compliance choice and a ledger-level guarantee (XLS-65 §7), not our own
-   leniency — say so on stage.
-9. ⚙️ `s9` — Loan B (pre-staged, now overdue) is impaired, then defaulted; the manager's
-   cushion absorbs the loss first; the insurance escrow pays out to the protected investor.
-10. ✅ `s10` — investors withdraw capital plus yield.
-
-## Known spec/implementation gaps (see `FEEDBACK_REPORT.md` for detail)
-
-- Credit insurance cannot be triggered by ledger state directly — TokenEscrow only
-  releases on time or a crypto-condition, so a trusted party must observe the default
-  and reveal the fulfillment. No trustless credit derivative is buildable on XRPL today.
-- `LoanSet` pays the borrower directly; there is no separate drawdown transaction, though
-  the hackathon brief's own wording still implies one.
-- XLS-66 has no `LoanTransfer` transaction — a `Loan` stays permanently tied to the
-  Broker+Borrower pair that created it.
-- **A private vault gates deposits but not loans.** `LoanSet` never consults the vault's
-  `PermissionedDomain`, so an account the vault refuses a `VaultDeposit` from (`tecNO_AUTH`) can
-  still be handed that vault's assets as a loan. Reproduced on two independent runs by
-  `npm run demo gate`. Not an exploit — `LoanSet` is dual-signed, so the broker must still
-  counter-sign — but with a domain configured, an uncredentialed borrower is stopped by the
-  broker's off-ledger discretion alone.

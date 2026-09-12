@@ -57,6 +57,11 @@ async function cmdSetup() {
   console.log('\nSetup complete. Next: `npm run demo prestage`.')
 }
 
+/** NOTE — ordering: Loan B's principal comes out of the vault, so `s1` (credentials)
+ * and `s2` (investor deposits) must already have landed when this runs. Against a
+ * fresh `setup` the vault is empty and `LoanSet` returns `tecINSUFFICIENT_FUNDS`
+ * (reproduced 2026-09-12, tx 3D7A4835…0DE44). Run `s1` and `s2` before `prestage`,
+ * and treat the on-stage `s2` as a second, visible deposit. */
 async function cmdPrestage() {
   const client = await getClient()
   const w = loadWallets()
@@ -153,12 +158,19 @@ async function cmdFull() {
   await cmdSetup()
   const client = await getClient()
   const w = loadWallets()
+
+  // Credentials and the investor deposits have to land before Loan B is originated:
+  // the loan draws its principal from the vault, and a vault nobody has deposited into
+  // answers LoanSet with tecINSUFFICIENT_FUNDS. `prestage` has the same ordering
+  // requirement against a live stage — see the note on cmdPrestage().
+  for (const step of ['s1', 's2'] as const) await cmdStep(step)
+
   const state = loadState()
   await depositCover(client, w.manager, state.loanBrokerId!, state.mptIssuanceId!, 1_500)
   const loanB = await originate(client, w.sme, w.manager, state.loanBrokerId!, 'B', LOAN_B)
   await sellProtection(client, w.insurer, w.investorA, state.mptIssuanceId!, INSURANCE_COVERED_UNITS, INSURANCE_CANCEL_AFTER_SECONDS)
 
-  for (const step of ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8'] as const) await cmdStep(step)
+  for (const step of ['s3', 's4', 's5', 's6', 's7', 's8'] as const) await cmdStep(step)
 
   const defaultableAt = loanB.startDate + loanB.paymentInterval + loanB.gracePeriod
   await waitUntilRippleTime(client, defaultableAt)
@@ -201,7 +213,12 @@ async function main() {
   await disconnectClient()
 }
 
-main().catch((err) => {
-  console.error(err)
-  process.exitCode = 1
-})
+// The `.finally` is load-bearing: on the throw path `main()`'s own disconnect is
+// skipped, the WebSocket stays open, and the process hangs forever on a failed step
+// instead of exiting with the error it just printed.
+main()
+  .catch((err) => {
+    console.error(err)
+    process.exitCode = 1
+  })
+  .finally(() => disconnectClient())
