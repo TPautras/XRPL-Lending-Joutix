@@ -9,12 +9,17 @@ export interface SubmitResult {
 
 /** Autofills, signs and submits `tx` as `wallet`, waits for validation, prints the
  * engine result and an explorer link. Throws unless the result matches `expect`
- * (default `tesSUCCESS`) — friction that must never be swallowed silently. */
+ * (default `tesSUCCESS`) — friction that must never be swallowed silently.
+ *
+ * `record: true` is the one deliberate exception: for the gate probes in `flows/gate.ts`
+ * we do not know in advance what the ledger will answer (that is the whole experiment),
+ * so the result is returned rather than asserted. It is still printed with its raw
+ * engine code and explorer link — nothing is swallowed, only un-asserted. */
 export async function submit(
   client: Client,
   wallet: Wallet,
   tx: Record<string, unknown>,
-  opts: { expect?: string } = {},
+  opts: { expect?: string; record?: boolean } = {},
 ): Promise<SubmitResult> {
   // `autofill()` needs `Account` set to look up the sequence/reserve via `account_info`
   // — it does not infer it from `wallet`. Default it here so call sites that submit as
@@ -22,7 +27,7 @@ export async function submit(
   const withAccount = { Account: wallet.classicAddress, ...tx }
   const prepared = await client.autofill(withAccount as unknown as SubmittableTransaction)
   const signed = wallet.sign(prepared)
-  return finish(client, signed.tx_blob, String(tx.TransactionType), opts.expect)
+  return finish(client, signed.tx_blob, String(tx.TransactionType), opts.expect, opts.record)
 }
 
 /** For transactions assembled outside `submit()` — currently only the dual-signed
@@ -32,8 +37,9 @@ export async function submitBlob(
   txBlob: string,
   txType: string,
   expect?: string,
+  record?: boolean,
 ): Promise<SubmitResult> {
-  return finish(client, txBlob, txType, expect)
+  return finish(client, txBlob, txType, expect, record)
 }
 
 async function finish(
@@ -41,6 +47,7 @@ async function finish(
   txBlob: string,
   txType: string,
   expect: string | undefined,
+  record?: boolean,
 ): Promise<SubmitResult> {
   const response = await client.submitAndWait(txBlob)
   const meta = response.result.meta
@@ -52,10 +59,10 @@ async function finish(
   const wantCode = expect ?? 'tesSUCCESS'
   const ok = resultCode === wantCode
   const link = `${NETWORK.explorer}/transactions/${hash}`
-  const mark = ok ? '✓' : '✗'
-  const expectNote = expect ? ` (expected ${expect})` : ''
+  const mark = record ? '·' : ok ? '✓' : '✗'
+  const expectNote = record ? ' (recorded, not asserted)' : expect ? ` (expected ${expect})` : ''
   console.log(`${mark} ${txType} -> ${resultCode}${expectNote}  ${link}`)
-  if (!ok) {
+  if (!ok && !record) {
     throw new Error(`${txType} returned ${resultCode}, expected ${wantCode} -- ${link}`)
   }
   return { hash, resultCode, meta }

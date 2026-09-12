@@ -36,6 +36,13 @@ export async function verify(client: Client): Promise<void> {
   for (const [slot, loan] of Object.entries(state.loans)) {
     if (!loan) continue
     const entry = await ledgerEntry(client, loan.loanId)
+    // A fully repaid loan keeps its Loan object but the ledger clears
+    // PrincipalOutstanding/TotalValueOutstanding/PaymentRemaining/NextPaymentDueDate
+    // (replaced by PreviousPaymentDueDate) — report that plainly instead of "undefined".
+    if (entry.PrincipalOutstanding === undefined && entry.PreviousPaymentDueDate !== undefined) {
+      console.log(`\n== Loan ${slot} (fully repaid) ==`)
+      continue
+    }
     const flags = Number(entry.Flags ?? 0)
     const status = flags & 0x00010000 ? 'defaulted' : flags & 0x00020000 ? 'impaired' : 'active'
     console.log(`\n== Loan ${slot} (${status}) ==`)

@@ -3,6 +3,8 @@
  *
  * Commands:
  *   setup     one-time: stablecoin, credentials domain, private vault, broker (no cover yet)
+ *   gate      Phase 2 evidence: walks one account through every credential state and
+ *             records what the ledger answers, including the uncredentialed-borrower probe
  *   prestage  run ~5 min before going on stage: cover, loan B (the one that will default),
  *             sell protection on it. Prints when it becomes defaultable.
  *   s1..s10   the on-stage steps, matching CLAUDE.md's numbered demo script
@@ -22,7 +24,8 @@ import { createVault, deposit, withdraw } from './flows/vault.js'
 import { createBroker, depositCover } from './flows/broker.js'
 import { originate, pay, impair, defaultLoan, type LoanTerms } from './flows/loan.js'
 import { sellProtection, payPremium, payoutProtection } from './flows/insurance.js'
-import { overWithdraw, intruderDeposit } from './flows/rejections.js'
+import { overWithdraw, intruderDeposit, revokedStillWithdraws } from './flows/rejections.js'
+import { proveGate } from './flows/gate.js'
 import { verify } from './flows/report.js'
 
 const LOAN_A: LoanTerms = { principal: 2000, interestRate: 100000, paymentTotal: 1, paymentInterval: 60, gracePeriod: 60 }
@@ -43,6 +46,9 @@ async function cmdSetup() {
   await stablecoin.payOut(client, w.issuer, w.investorB, issuanceId, 100_000)
   await stablecoin.payOut(client, w.issuer, w.manager, issuanceId, 5_000)
   await stablecoin.payOut(client, w.issuer, w.insurer, issuanceId, 50_000)
+  // The intruder is funded on purpose: its rejection in s8 has to be about the missing
+  // credential and nothing else. See flows/rejections.ts intruderDeposit().
+  await stablecoin.payOut(client, w.issuer, w.smeUncredentialed, issuanceId, 5_000)
 
   const domainId = await createDomain(client, w.manager, w.authority)
   const { vaultId } = await createVault(client, w.manager, issuanceId, { domainId })
@@ -113,7 +119,10 @@ async function cmdStep(step: string) {
       break
 
     case 's8':
-      await intruderDeposit(client, w.smeUncredentialed, vaultId, issuanceId, 1_000)
+      // Two beats, both required by CLAUDE.md's "the gate": the door is shut to an
+      // uncredentialed account, and it is deliberately not shut on the way out.
+      await intruderDeposit(client, w.issuer, w.smeUncredentialed, vaultId, issuanceId, 1_000)
+      await revokedStillWithdraws(client, w.authority, w.investorB, vaultId, issuanceId, 100)
       break
 
     case 's9': {
@@ -156,7 +165,7 @@ async function cmdFull() {
 async function main() {
   const command = process.argv[2]
   if (!command) {
-    console.error('Usage: npm run demo <setup|prestage|s1..s10|full|verify|reset>')
+    console.error('Usage: npm run demo <setup|prestage|s1..s10|gate|full|verify|reset>')
     process.exitCode = 1
     return
   }
@@ -169,6 +178,7 @@ async function main() {
 
   if (command === 'setup') await cmdSetup()
   else if (command === 'prestage') await cmdPrestage()
+  else if (command === 'gate') await proveGate(await getClient(), loadWallets())
   else if (command === 'verify') await verify(await getClient())
   else if (command === 'full') await cmdFull()
   else if (/^s([1-9]|10)$/.test(command)) await cmdStep(command)

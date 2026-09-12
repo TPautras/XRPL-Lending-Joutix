@@ -43,6 +43,8 @@ export async function createVault(
   return { vaultId: index, shareMptId }
 }
 
+/** `record` returns whatever the ledger answered instead of asserting it — used only by
+ * the gate probes in flows/gate.ts, where the answer is the experiment. */
 export async function deposit(
   client: Client,
   investor: Wallet,
@@ -50,12 +52,13 @@ export async function deposit(
   issuanceId: string,
   units: number,
   expect?: string,
+  record?: boolean,
 ): Promise<SubmitResult> {
   return submit(
     client,
     investor,
     { TransactionType: 'VaultDeposit', VaultID: vaultId, Amount: mptAmount(issuanceId, units) },
-    { expect },
+    { expect, record },
   )
 }
 
@@ -66,11 +69,12 @@ export async function withdraw(
   issuanceId: string,
   units: number,
   expect?: string,
+  record?: boolean,
 ): Promise<SubmitResult> {
   return submit(
     client,
     investor,
     { TransactionType: 'VaultWithdraw', VaultID: vaultId, Amount: mptAmount(issuanceId, units) },
-    { expect },
+    { expect, record },
   )
 }
