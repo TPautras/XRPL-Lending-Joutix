@@ -18,7 +18,7 @@ else stays wallet-to-ledger direct.
 | **Hackathon** | XRPL Lending Protocol — DeVinci Blockchain × Ripple, Nanterre, 2026-09-12/13 |
 | **Track / flavour** | Track 1 (open-ended vault, Lending Protocol V1) · Loaded |
 | **Network** | Custom Hackathon Devnet — `rippled 3.4.0-rc1`, `network_id 4001` |
-| **Library** | `xrpl@5.2.0` · React 19 + Vite 7 · Node 20+ |
+| **Library** | `xrpl@5.2.0-beta.1` · React 19 + Vite 7 · Node 20+ |
 | **Evidence** | [Verified transactions](#verified-on-ledger-evidence) · [Findings](#what-we-found) · [`FEEDBACK_REPORT.md`](./FEEDBACK_REPORT.md) · [`docs/FRICTION.md`](./docs/FRICTION.md) |
 
 ---
