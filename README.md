@@ -212,7 +212,45 @@ drawdown step (§3) · no `LoanTransfer`, so a `Loan` is permanently tied to the
 pair that dual-signed it (§4) · the two-party `LoanSet` fee ordering, and the correction that
 `autofill()` already handles it (§5) · the event faucet not matching xrpl.js's faucet contract
 (§6) · `MPToken` missing from xrpl.js's `LedgerEntry` union (§9) · `five-bells-condition`'s
-`PreimageSha256` silently dropping its constructor options (`docs/FRICTION.md` 18:05Z).
+`PreimageSha256` silently dropping its constructor options (`docs/FRICTION.md` 18:05Z) ·
+`MPTokenIssuanceCreate` printing an XLS-89 metadata warning to the console on a transaction that
+still lands `tesSUCCESS` — harmless, but nothing cross-references XLS-89 from the MPT docs
+themselves (`docs/FRICTION.md` 14:29Z) · `Escrow.Sequence` missing from xrpl.js's
+`LedgerEntry.Escrow` model, the one field `EscrowFinish`/`EscrowCancel` actually need to settle an
+escrow, forcing a widened type at the call site (`docs/FRICTION.md` 20:35Z).
+
+### Wallet-extension gaps (found late, not in the graded report)
+
+Found on the second day, wiring wallet-extension signing for the private-vault demo — after
+`FEEDBACK_REPORT.md` had already been written and finalized, which is why these live only in
+`docs/FRICTION.md` and here, not in the graded report:
+
+- **GemWallet's popup crashes on `VaultDeposit`.** Its own generic "we are getting this error
+  fixed" screen, not a rejection our code throws. Traced by reading `@gemwallet/api@3.8.0`
+  directly: it forwards the transaction verbatim with no allow-list, so the crash is inside
+  GemWallet's closed-source popup renderer, not this app or the API wrapper. Cross-referencing the
+  event's own linked materials found no browser wallet extension anywhere demonstrating
+  `VaultDeposit`/`LoanSet` signing — the official reference app and the xrpl.org Single Asset
+  Vault tutorial both sign with a persisted server-side seed instead, and the event needed a
+  specially patched wallet fork of its own to attempt lending-protocol support in a browser wallet
+  at all.
+- **GemWallet's custom-network id collides by construction.** `@gemwallet/api`'s `getNetwork()`
+  reports the literal string `"Custom"` for any user-configured node, so
+  `GemWalletAdapter.toNetworkInfo()` always derives the same `"xrpl-custom"` id regardless of
+  which devnet is actually configured. Worked around by checking `account.networkWss` (the one
+  field the adapter reports honestly) instead of the id.
+- **WalletConnect cannot reach this devnet at all.** A paired wallet silently substitutes `xrpl:0`
+  (mainnet) for the requested `xrpl:4001` — confirmed empirically, not merely anticipated — so
+  WalletConnect was removed from the app rather than leave a button that can never succeed.
+- **A stale hand-written `xrpl-connect.d.ts` was shadowing the real vendored types**, left over
+  from an earlier `0.8.2` install that shipped no types of its own; the project has since moved to
+  a vendored `1.0.0-rc.2` that ships real ones. Deleting the stale ambient file surfaced three
+  previously-hidden type errors (`WalletConnector.tsx`, `walletTx.ts`, `WalletContext.tsx`), all
+  fixed the same day.
+
+None of this is a protocol gap — it's the direct cost of this app's own choice to sign through a
+wallet extension instead of a server-held seed (`CLAUDE.md` → "Webapp signing rule"), the opposite
+of both the event's reference implementation and its tutorial, neither of which had to face it.
 
 ---
 
@@ -254,7 +292,13 @@ keypair, not a signed blob). For that one transaction, and only that one, the bo
 their connected wallet (`useLoanSetSubmit()` in `lib/walletActions.ts`) and `server/loan-signer`
 — TrustFlow's one deliberate exception to "no backend," holding only the broker's key — applies
 the counter-signature and submits, reporting the raw engine code back; see
-[`docs/plans/loanset-signing-service.md`](./docs/plans/loanset-signing-service.md). The
+[`docs/plans/loanset-signing-service.md`](./docs/plans/loanset-signing-service.md). That service
+has no auth beyond restricting CORS to `FRONTEND_ORIGIN` — anyone who can reach its port directly
+(bypassing browser CORS entirely, e.g. `curl`) can get the broker's counter-signature applied to
+any borrower-signed `LoanSet` blob. `LoanSet` itself still enforces a valid broker, a genuine first
+signature and sufficient vault liquidity, so nothing is forged — but the service doesn't check who
+is asking. Acceptable for a devnet demo behind a URL the audience doesn't have, flagged here as a
+deliberate scope decision rather than an oversight (`docs/FRICTION.md`, 2026-09-13). The
 authority/manager wallet migration described above is separate and still open (`CLAUDE.md` →
 "Verify first").
 
