@@ -35,12 +35,60 @@ function engineResult(meta: TxResponse['result']['meta']): string {
   return meta?.TransactionResult ?? 'unknown'
 }
 
-/** Wallets that cannot sign without submitting say so in different words; anything else
- * (a rejection, a locked wallet) must not be retried through the other path, or the user
- * gets a second popup for a transaction they just refused. */
-function isUnsupported(err: unknown): boolean {
+/**
+ * XLS-65 and XLS-66 transaction types, plus the one XLS-70 type this app sends. A wallet
+ * extension serializes with whatever `ripple-binary-codec` it happens to bundle, and a
+ * build published before these amendments cannot encode them at all — the signature fails
+ * inside the extension, before the network is ever involved.
+ */
+const NEW_TX_TYPES = new Set([
+  'VaultCreate',
+  'VaultDeposit',
+  'VaultWithdraw',
+  'VaultSet',
+  'VaultDelete',
+  'LoanBrokerSet',
+  'LoanBrokerCoverDeposit',
+  'LoanBrokerCoverWithdraw',
+  'LoanSet',
+  'LoanPay',
+  'LoanManage',
+  'LoanDelete',
+  'CredentialAccept',
+])
+
+/**
+ * Distinguishes "this wallet has no sign-only method" from "this wallet cannot handle this
+ * transaction".
+ *
+ * Both say "unsupported", and conflating them costs the user a second wallet popup for a
+ * transaction that cannot succeed either way — then reports the second failure, which is
+ * the less informative of the two. Only a *method* complaint is worth retrying through
+ * `signAndSubmit`; a transaction the wallet cannot encode will fail identically there.
+ */
+export function isMethodUnsupported(err: unknown, transactionType: string): boolean {
   const message = err instanceof Error ? err.message : String(err)
-  return /not (support|implement)|unsupported|unavailable method/i.test(message)
+  if (!/not (support|implement)|unsupported|unavailable method/i.test(message)) return false
+  // Naming the transaction type, or transaction types in general, makes it the transaction
+  // that is unsupported — not the method.
+  if (new RegExp(`${transactionType}|transaction type|txn type`, 'i').test(message)) return false
+  return true
+}
+
+/** Says what a wallet-side signing failure actually means, when we can tell. */
+export function explainSigningFailure(err: unknown, transactionType: string): string {
+  const message = err instanceof Error ? err.message : String(err)
+  if (!NEW_TX_TYPES.has(transactionType)) return message
+  if (!/not (support|implement)|unsupported|unknown|invalid|encode|serializ|definition|field/i.test(message)) {
+    return message
+  }
+  return (
+    `${message} — ${transactionType} is an XLS-65/66 transaction type, and a wallet extension can only ` +
+    'sign what the ripple-binary-codec it ships with knows how to encode. An extension published before ' +
+    'those amendments cannot serialize this at all, so the signature fails inside the wallet and never ' +
+    'reaches the network. Until the extension ships an updated codec, run this step from src/protocol/ ' +
+    '(npm run demo) instead.'
+  )
 }
 
 async function waitForTx(client: Client, hash: string, attempts = 8): Promise<WalletSubmitResult> {
@@ -74,6 +122,7 @@ export async function submitFromWallet(
   tx: SubmittableTransaction,
 ): Promise<WalletSubmitResult> {
   const prepared = await client.autofill(tx)
+  const type = tx.TransactionType
 
   try {
     const signed = await manager.sign(prepared as unknown as Record<string, unknown>)
@@ -86,12 +135,17 @@ export async function submitFromWallet(
       }
     }
   } catch (err) {
-    if (!isUnsupported(err)) {
-      throw new WalletSubmitError(err instanceof Error ? err.message : String(err))
+    if (!isMethodUnsupported(err, type)) {
+      throw new WalletSubmitError(explainSigningFailure(err, type))
     }
   }
 
-  const submitted = await manager.signAndSubmit(prepared as unknown as Record<string, unknown>)
+  let submitted
+  try {
+    submitted = await manager.signAndSubmit(prepared as unknown as Record<string, unknown>)
+  } catch (err) {
+    throw new WalletSubmitError(explainSigningFailure(err, type))
+  }
   const hash = submitted?.hash ?? submitted?.id
   if (!hash) throw new WalletSubmitError('The wallet returned no transaction hash')
   return waitForTx(client, hash)
