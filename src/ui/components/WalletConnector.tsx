@@ -1,7 +1,7 @@
 import { useEffect, useRef, type CSSProperties } from 'react'
 import { Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { WalletConnectorElement } from 'xrpl-connect'
+import type { WalletConnectorElementInstance } from 'xrpl-connect'
 import { useWallet } from '../wallet/WalletContext'
 import { enabledWalletIds } from '../wallet/config'
 
@@ -31,7 +31,7 @@ export function WalletConnector() {
   // WalletConnectorElement at each call site.
   const connectorRef = useRef<HTMLElement | null>(null)
 
-  const connector = () => connectorRef.current as WalletConnectorElement | null
+  const connector = () => connectorRef.current as WalletConnectorElementInstance | null
 
   useEffect(() => {
     if (!walletManager) return

@@ -9,9 +9,11 @@ import type { WalletManager } from 'xrpl-connect'
  * What reaches this function is filtered upstream, by one question: does the transaction
  * need anything beyond the connected account's own signature? `VaultDeposit`,
  * `VaultWithdraw`, `LoanPay`, `LoanBrokerCoverDeposit`, `CredentialAccept` and the escrows
- * behind a protection policy do not, and they come through here. `LoanSet` does — it is
- * dual-signed by borrower and broker, and no wallet holds both keys — so it stays in
- * `src/protocol/`, as do the transactions belonging to the authority and the broker-owner.
+ * behind a protection policy do not, and they come through here. `LoanSet` does not — it
+ * is dual-signed by borrower and broker, and no wallet holds both keys — so it takes the
+ * separate `submitLoanSetFromWallet()` path below instead, which stops after the
+ * borrower's signature and hands the blob to `server/loan-signer` for the broker's
+ * counter-signature (docs/plans/loanset-signing-service.md).
  */
 export interface WalletSubmitResult {
   hash: string
@@ -125,7 +127,7 @@ export async function submitFromWallet(
   const type = tx.TransactionType
 
   try {
-    const signed = await manager.sign(prepared as unknown as Record<string, unknown>)
+    const signed = await manager.sign(prepared)
     if (signed?.tx_blob) {
       const response = await client.submitAndWait(signed.tx_blob)
       return {
@@ -140,13 +142,55 @@ export async function submitFromWallet(
     }
   }
 
-  let submitted
-  try {
-    submitted = await manager.signAndSubmit(prepared as unknown as Record<string, unknown>)
-  } catch (err) {
-    throw new WalletSubmitError(explainSigningFailure(err, type))
-  }
+  const submitted = await manager.signAndSubmit(prepared)
   const hash = submitted?.hash ?? submitted?.id
   if (!hash) throw new WalletSubmitError('The wallet returned no transaction hash')
   return waitForTx(client, hash)
+}
+
+interface CountersignResponse {
+  resultCode: string
+  hash?: string
+}
+
+/**
+ * `LoanSet`'s browser-side half: autofill against *our* connection (so `Fee` and
+ * `Sequence` are fixed before anyone signs, per `docs/snippets/loan-set-dual-sign.ts`),
+ * sign with the connected wallet, then hand the signed blob to the loan-signer service
+ * for the broker's counter-signature and submission. Deliberately does not fall back to
+ * `manager.signAndSubmit()` the way `submitFromWallet` does — that would submit the
+ * transaction before the counter-signature exists, which the ledger will simply reject
+ * (XLS-66 requires both signatures present at submission), so a wallet that only offers
+ * `signAndSubmit()` cannot originate a `LoanSet` at all; surface that plainly instead of
+ * masking it as a generic submit failure.
+ */
+export async function submitLoanSetFromWallet(
+  manager: WalletManager,
+  client: Client,
+  tx: SubmittableTransaction,
+  loanSignerUrl: string,
+): Promise<WalletSubmitResult> {
+  const prepared = await client.autofill(tx)
+
+  let signed: { tx_blob?: string } | undefined
+  try {
+    signed = await manager.sign(prepared)
+  } catch (err) {
+    throw new WalletSubmitError(err instanceof Error ? err.message : String(err))
+  }
+  if (!signed?.tx_blob) {
+    throw new WalletSubmitError('This wallet cannot sign without submitting, so it cannot originate a LoanSet')
+  }
+
+  const response = await fetch(loanSignerUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ tx_blob: signed.tx_blob }),
+  })
+  const body = (await response.json()) as CountersignResponse
+  if (!response.ok && !body.resultCode) {
+    throw new WalletSubmitError(`loan-signer service returned ${response.status}`)
+  }
+
+  return { hash: body.hash ?? '', result: body.resultCode, validated: body.resultCode === 'tesSUCCESS' }
 }

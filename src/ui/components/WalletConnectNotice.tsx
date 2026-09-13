@@ -1,41 +1,26 @@
 import { Panel } from './Panel'
-import { WALLETCONNECT_ENABLED } from '../wallet/config'
 
 /**
- * The XRPL Dev Wallet extension is reachable only over WalletConnect, and the
- * WalletConnect adapter needs a project id. Without one the wallet is silently missing
- * from the connect modal, which reads as "my wallet is unsupported" rather than
- * "a build-time variable is unset". Say which it is.
+ * The XRPL Dev Wallet extension (github.com/oz-ross/xrpl-dev-wallet-extension) injects
+ * nothing into the page — it pairs only over WalletConnect. Tested and confirmed a dead
+ * end for this app, not merely unconfigured: even with a correct CAIP-2 `walletConnectId`
+ * set (`lib/network.ts`), pairing against this custom devnet threw "Network mismatch.
+ * Expected 'xrpl:4001' but wallet is connected to 'xrpl:0'" — the wallet's own session
+ * only ever advertises the standard chains, never a custom `network_id`, and that is
+ * outside this app's control. So WalletConnect is not offered in the connect modal at
+ * all (`wallet/config.ts`); this says why, instead of leaving the wallet silently absent.
  */
 export function WalletConnectNotice() {
-  if (WALLETCONNECT_ENABLED) return null
-
   return (
-    <Panel title="WalletConnect is off" tone="warn">
+    <Panel title="WalletConnect can't reach this devnet" tone="warn">
       <p className="text-sm">
         The <a href="https://github.com/oz-ross/xrpl-dev-wallet-extension" target="_blank" rel="noreferrer">XRPL
-        Dev Wallet</a> extension injects nothing into the page — it pairs only over
-        WalletConnect, so it cannot appear in the list until that adapter is enabled.
+        Dev Wallet</a> extension pairs only over WalletConnect, and WalletConnect wallets only ever advertise the
+        standard XRPL chains (mainnet/testnet/devnet) in their session — never this event&rsquo;s custom{' '}
+        <code>network_id</code>. Pairing was tested here and failed with exactly that mismatch, so this app doesn&rsquo;t
+        offer WalletConnect at all. Use <strong>Crossmark</strong> or <strong>GemWallet</strong> instead — both let
+        you add this devnet as a custom network directly in the extension.
       </p>
-      <ol className="m-0 mt-3 grid list-decimal gap-2 pl-5 text-sm">
-        <li>
-          Get a free project id at <code>cloud.walletconnect.com</code> (now Reown). The
-          extension needs one too, in its own <code>.env</code> as <code>WC_PROJECT_ID</code>;
-          the same id works for both.
-        </li>
-        <li>
-          Put it in this project&rsquo;s <code>.env</code>:
-          <br />
-          <code>VITE_WALLETCONNECT_PROJECT_ID=your_id</code>
-        </li>
-        <li>
-          Restart <code>npm run dev</code> &mdash; Vite only reads <code>.env</code> at startup.
-        </li>
-        <li>
-          Pick <strong>WalletConnect</strong>, copy the <code>wc:</code> URI, and paste it into
-          the extension popup&rsquo;s &ldquo;Paste wc:… URI from the dApp&rdquo; field.
-        </li>
-      </ol>
     </Panel>
   )
 }

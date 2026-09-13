@@ -1,7 +1,8 @@
-import { TFEUR_SCALE } from '../../protocol/lib/mpt'
 import { NETWORK } from './network'
 
-export { TFEUR_SCALE }
+/** TFEUR demo stablecoin: 1 unit = 10^-2, i.e. balances are in cents. Must match the
+ * `AssetScale` passed to `MPTokenIssuanceCreate` when the stablecoin was issued. */
+export const TFEUR_SCALE = 2
 
 /**
  * Every amount this app reads off the ledger is an integer in the funding asset's base
