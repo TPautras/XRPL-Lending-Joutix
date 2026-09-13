@@ -76,6 +76,8 @@ Backup video: needs an actual screen recording against seeded devnet accounts �
 - [x] Links to verified on-ledger transactions (README's evidence tables)
 - [x] Slide deck, 10 slides max — drafted as an Artifact; export/attach to the final submission
 - [x] Feedback report, 3 pages max, at repo root (`FEEDBACK_REPORT.md`)
+- [x] Manual developer feedback report, 3 pages max, at repo root (`MANUAL_FEEDBACK_REPORT.md`) —
+      the hand-written DevEx narrative companion to the distilled findings
 - [ ] Completed developer-experience form — needs the organizer's form link
 - [x] DevEx capture hook installed (`/xrpl-status`)
 - [ ] Backup demo video — needs an actual screen recording of a live run against seeded devnet

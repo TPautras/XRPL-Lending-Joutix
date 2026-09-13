@@ -451,6 +451,8 @@ the 20 minutes it takes to film a fallback.
 - This README — project, setup, track, environment, library version, every XLS-65/66 transaction
   used, and links to verified on-ledger transactions
 - [`FEEDBACK_REPORT.md`](./FEEDBACK_REPORT.md) — the developer feedback report
+- [`MANUAL_FEEDBACK_REPORT.md`](./MANUAL_FEEDBACK_REPORT.md) — the manual developer feedback report:
+  where the time went, which assumptions we formed, and what we would fix first
 - [`docs/FRICTION.md`](./docs/FRICTION.md) — the raw friction log it was distilled from
 - [`CLAUDE.md`](./CLAUDE.md) — design rationale, build order, and the rules this project holds
   itself to (how the findings must be worded, why the webapp never signs)
