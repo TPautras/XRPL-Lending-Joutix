@@ -8,7 +8,7 @@ an insurer covers the default risk on a given loan.
 Every step — deposit, loan, repayment, default, payout — is native XLS-65 (Single Asset Vault)
 and XLS-66 (Lending Protocol), coupled with Credentials, a Permissioned Domain and TokenEscrow.
 **No custom contracts, no server-side state.** The webapp itself has no backend — the one
-deliberate exception, planned but not yet built, is a narrow signing service for `LoanSet`'s
+deliberate exception is `server/loan-signer`, a narrow service that applies `LoanSet`'s broker
 counter-signature (no browser wallet extension can produce it); see
 [`docs/plans/loanset-signing-service.md`](./docs/plans/loanset-signing-service.md). Everything
 else stays wallet-to-ledger direct.
@@ -251,9 +251,12 @@ authority/manager to connect their own wallet for that one action, same as anyon
 than keep a scripted seed. `LoanSet` is the exception that can't resolve that way at all: it's
 dual-signed, and no wallet extension can produce the broker's counter-signature (it needs a raw
 keypair, not a signed blob). For that one transaction, and only that one, the borrower signs via
-their wallet and a small dedicated signing service — TrustFlow's one deliberate exception to "no
-backend" — applies the counter-signature and submits. Until that service is built, `LoanSet`
-stays scripted in `src/protocol/`, same as today.
+their connected wallet (`useLoanSetSubmit()` in `lib/walletActions.ts`) and `server/loan-signer`
+— TrustFlow's one deliberate exception to "no backend," holding only the broker's key — applies
+the counter-signature and submits, reporting the raw engine code back; see
+[`docs/plans/loanset-signing-service.md`](./docs/plans/loanset-signing-service.md). The
+authority/manager wallet migration described above is separate and still open (`CLAUDE.md` →
+"Verify first").
 
 A wallet with no accepted `Credential` still gets `tecNO_AUTH` from the private reserve's
 `VaultDeposit`. That is the gate working, and the screen shows the raw engine code as the

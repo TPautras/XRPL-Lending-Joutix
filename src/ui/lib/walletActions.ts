@@ -1,17 +1,20 @@
 import { useCallback, useState } from 'react'
 import { LedgerEntry, type Client, type SubmittableTransaction } from 'xrpl'
 import { useLedger, useLedgerQuery, type LedgerQuery } from './ledger'
-import { submitFromWallet } from './walletTx'
+import { submitFromWallet, submitLoanSetFromWallet } from './walletTx'
+import { LOAN_SIGNER_URL } from './network'
 import { appendWalletLog, readWalletLog, type LocalTx } from './walletLog'
 import { useWallet } from '../wallet/WalletContext'
 
 /**
- * Single-signer TrustFlow actions a connected wallet can submit directly — everywhere
- * except `LoanSet`, which is dual-signed (borrower + broker) and stays a scripted flow
- * (see CLAUDE.md "The webapp" and `flows/loan.ts originate()`). `VaultDeposit`,
+ * Single-signer TrustFlow actions a connected wallet can submit directly. `VaultDeposit`,
  * `VaultWithdraw`, `LoanPay`, `LoanBrokerCoverDeposit` and `CredentialAccept` each need
  * only the connected account's own signature, so Dashboard and The Gate submit them the
- * same way Market already submits `EscrowCreate`/`EscrowFinish`/`EscrowCancel`.
+ * same way Market already submits `EscrowCreate`/`EscrowFinish`/`EscrowCancel`. `LoanSet`
+ * is dual-signed (borrower + broker) — `useLoanSetSubmit()` below signs it with the
+ * connected wallet and hands it to the `server/loan-signer` service for the broker's
+ * counter-signature (docs/plans/loanset-signing-service.md), instead of submitting it
+ * directly the way `useWalletSubmit()` does.
  */
 
 async function mptBalanceOf(client: Client, account: string, issuanceId: string): Promise<string> {
@@ -105,6 +108,48 @@ export function useWalletSubmit(): WalletSubmit {
         )
         // The raw engine code is the signal (CLAUDE.md rules): a tec* outcome is shown as
         // plainly as a thrown error rather than reported as success.
+        if (outcome.result !== 'tesSUCCESS') setError(`${tx.TransactionType} → ${outcome.result}`)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setPending(null)
+      }
+    },
+    [walletManager, account, client],
+  )
+
+  return { pending, error, clearError: () => setError(null), log, send }
+}
+
+/**
+ * `LoanSet`'s counterpart to `useWalletSubmit()`. Same pending/error/log shape, so a
+ * caller renders it identically — the difference is entirely inside `send`, which stops
+ * after the borrower's own signature and lets `server/loan-signer` apply the broker's
+ * counter-signature and submit (docs/plans/loanset-signing-service.md).
+ */
+export function useLoanSetSubmit(): WalletSubmit {
+  const { walletManager, account } = useWallet()
+  const { client } = useLedger()
+  const [pending, setPending] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [log, setLog] = useState<LocalTx[]>(() => readWalletLog())
+
+  const send = useCallback(
+    async (tx: SubmittableTransaction, note?: string) => {
+      if (!walletManager || !account) return
+      setPending(tx.TransactionType)
+      setError(null)
+      try {
+        const outcome = await submitLoanSetFromWallet(walletManager, client, tx, LOAN_SIGNER_URL)
+        setLog(
+          appendWalletLog({
+            ts: new Date().toISOString(),
+            type: tx.TransactionType,
+            result: outcome.result,
+            hash: outcome.hash,
+            note,
+          }),
+        )
         if (outcome.result !== 'tesSUCCESS') setError(`${tx.TransactionType} → ${outcome.result}`)
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))

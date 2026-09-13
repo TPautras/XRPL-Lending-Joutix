@@ -8,13 +8,19 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { WalletManager, type AccountInfo, type WalletManagerError } from 'xrpl-connect'
+import { WalletManager, type AccountInfo, type WalletError } from 'xrpl-connect'
 import { buildAdapters, NETWORK } from './config'
 
 export interface ConnectedAccount {
   address: string
   networkId: string
   networkName: string
+  /** The wallet's actual reported endpoint — the reliable way to tell whether a
+   * connected account is really on this app's devnet. `networkId` is not: for a
+   * user-configured custom network, GemWallet's `id` is always the generic string
+   * `"xrpl-custom"` regardless of which node it points at (see `lib/network.ts`), so
+   * `wrongNetwork` checks in the UI must compare this instead. */
+  networkWss: string
   walletId: string
   walletName: string
 }
@@ -39,7 +45,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         adapters: buildAdapters(),
         network: NETWORK, // a custom NetworkInfo, not one of xrpl-connect's presets — see config.ts
         autoConnect: true,
-        logger: { level: 'info' },
+        // 'debug' rather than 'info': the UI only ever shows `error.message`, a single
+        // line, while a wallet's own failure (e.g. Crossmark/GemWallet's connect-time
+        // network check) can carry a fuller `originalError`/stack that only ever reaches
+        // this console — see `onError` below, which logs it in full.
+        logger: { level: 'debug' },
       }),
   )
 
@@ -65,20 +75,27 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       address: current.address,
       networkId: current.network?.id ?? NETWORK.id,
       networkName: current.network?.name ?? NETWORK.name,
+      networkWss: current.network?.wss ?? NETWORK.wss,
       walletId: wallet?.id ?? 'unknown',
       walletName: wallet?.name ?? 'Unknown wallet',
     })
   }, [])
 
   useEffect(() => {
-    const onConnect = (_account: AccountInfo) => {
+    const onConnect = (account: AccountInfo) => {
       setError(null)
+      console.debug('[wallet] connect event', account)
       readState()
     }
     const onDisconnect = () => readState()
     const onNetworkChanged = () => readState()
-    const onError = (err: WalletManagerError) => {
+    const onError = (err: WalletError) => {
       setError(err.code ? `${err.code}: ${err.message}` : err.message)
+      // The banner shows one line; `toJSON()` carries the rest — `category` and
+      // `originalError` (with its own stack) — so a failure like Crossmark/GemWallet's
+      // connect-time network check can be diagnosed from devtools without reproducing
+      // it again with extra instrumentation.
+      console.error('[wallet] error event', err.toJSON())
     }
 
     walletManager.on('connect', onConnect)

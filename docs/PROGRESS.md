@@ -96,44 +96,50 @@ Backup video: needs an actual screen recording against seeded devnet accounts �
 Full context for the two one-line checks in `CLAUDE.md`'s "Verify first" section. Update or
 delete each entry as it resolves — don't let `CLAUDE.md` accumulate this detail back.
 
-**Signing migration is targeted, not landed.** `src/protocol/` (every scripted flow, `probe.ts`,
-`demo.ts`) and `npm run probe` / `npm run demo` are deleted in the working tree, uncommitted, and
-`xrpl-connect` is bumped to a vendored `1.0.0-rc.2` in place of registry `0.8.2` — but nothing in
-`src/ui` implements the replacement yet (its own code comments still say `LoanSet` "stays a
-scripted flow", checked in `lib/walletActions.ts`/`lib/walletTx.ts`).
+**Signing migration is targeted, not landed — except `LoanSet`, now resolved.** `src/protocol/`
+(every scripted flow, `probe.ts`, `demo.ts`) and `npm run probe` / `npm run demo` are deleted in
+the working tree, uncommitted, and `xrpl-connect` is bumped to a vendored `1.0.0-rc.2` in place of
+registry `0.8.2` — but nothing in `src/ui` implements the single-signer privileged-transaction
+replacement yet.
 
 Intended design, confirmed with the team: retire `.env`-seed custody entirely. Every privileged
 account connects *its own* wallet in the browser when it's that account's turn, instead of a
 Node script holding its seed. This resolves cleanly for the single-signer privileged
 transactions — `CredentialCreate`/`CredentialDelete` (authority), `LoanBrokerSet`/`LoanManage`/
-`VaultCreate` (manager as broker-owner) — since `xrpl-connect@1.0.0-rc.2`'s wallet adapters
-(Crossmark, GemWallet, WalletConnect, Ledger) all expose single-signer `sign()`/`signAndSubmit()`,
-confirmed by reading the vendored package's `index.d.ts` directly (no multisign/custody API
-exists in it, nor is one needed for these).
+`VaultCreate` (manager as broker-owner) — since `xrpl-connect@1.0.0-rc.2`'s Crossmark and
+GemWallet adapters both expose single-signer `sign()`/`signAndSubmit()`, confirmed by reading
+the vendored package's `index.d.ts` directly (no multisign/custody API exists in it, nor is
+one needed for these). **This part is still open** — no `src/ui` code wires it up yet.
+WalletConnect is not among these: tested and confirmed unable to reach this custom devnet at
+all (see below), so it's not offered as a transport for anything.
 
-**`LoanSet`'s dual-sign — resolved by decision, not yet built.** `docs/snippets/loan-set-dual-sign.ts`
-uses xrpl.js's `signLoanSetByCounterparty(brokerOwner: Wallet, tx_blob)` for the counter-signature
-— it takes a raw `Wallet` instance (a keypair), not a signed-blob-in/signed-blob-out call, and no
-browser wallet extension will ever hand the app one. Rather than chase whether some extension's
-signing primitive could be coerced into producing that signature, the decision is to build a
-narrow, dedicated signing service that holds only the broker's key and performs this one step —
-TrustFlow's one deliberate exception to "no backend," explicitly not a first step toward a
-broader one. Full spec: `docs/plans/loanset-signing-service.md`. *Delete this entry once that
-service is built, verified against the live devnet, and `CLAUDE.md`/README are updated to match
-(the plan's own step 6 covers those doc updates).*
+`LoanSet`'s dual-sign is done: `server/loan-signer` (spec: `docs/plans/loanset-signing-service.md`)
+holds only the broker-owner's key and applies its counter-signature over an already
+borrower-signed blob. `countersign.ts`'s unit test passes against a checked-in fixture with zero
+network access; end-to-end, `useLoanSetSubmit()`/`submitLoanSetFromWallet()`
+(`lib/walletActions.ts`/`lib/walletTx.ts`) signing client-side and POSTing to the running service
+returned `tesSUCCESS` against the live devnet on two independent runs (a fresh `VaultCreate` +
+`LoanBrokerSet` + `VaultDeposit`, then two separate `LoanSet`s through the service, both
+`tesSUCCESS`, 2026-09-13). `CLAUDE.md` and `README.md` are updated to match.
 
-**Devnet protocol version is unconfirmed (V1 vs V1.1).** This project needs Lending Protocol
-**V1** — open-ended vaults, whole-life accounting (full scheduled interest recognized at loan
-origination, which `CLAUDE.md`'s "share value rises mechanically" line assumes). If **V1.1** is
-also enabled on the same ledger: new loans get restricted to closed-ended vaults only (the
-abandoned Track 2 shape), and accounting switches to cash-basis (interest recognized only as
-payments land) — either one invalidates assumptions made throughout `CLAUDE.md`. Check via
-`server_definitions`/`feature` before build starts:
-`curl -s $DEVNET_RPC -d '{"method":"feature"}' | jq '.result.features | to_entries[] | select(.value.name | test("Lending"; "i"))'`
-— more than one Lending-related amendment enabled is the signal to stop and re-derive, not guess.
-If V1.1 turns out to be active, escalate to organizers immediately rather than trying to route
-around it — TrustFlow's open-ended premise breaks. *Delete this entry once the final hackathon
-network config is confirmed and won't change before the event.*
+**Devnet protocol version: BOTH V1 and V1.1 are live (checked 2026-09-13, not yet escalated).**
+`curl -s $DEVNET_RPC -d '{"method":"feature"}'` shows `LendingProtocol` (V1) and
+`LendingProtocolV1_1` **both** `enabled: true`, exactly the trigger condition this entry always
+said meant "stop and re-derive, not guess" and "escalate to organizers immediately." That has
+not happened yet — flagging it now rather than assuming it away.
+
+What's known so far, and what isn't: a live-devnet run earlier today (`VaultCreate` →
+`LoanBrokerSet` → `VaultDeposit` → two separate `LoanSet`s, all against a freshly created
+**open-ended** vault) returned `tesSUCCESS` throughout — so, at minimum, *originating* a loan
+against an open-ended vault is not currently blocked, which is some evidence against the
+specific "new loans restricted to closed-ended vaults only" failure mode this entry warned
+about. That test did not check the other half of the concern — whether accounting is
+whole-life (V1) or cash-basis (V1.1) in practice on this ledger, which changes what
+`AssetsTotal`/share price/broker debt metrics mean and would invalidate assumptions elsewhere
+in `CLAUDE.md` even if loan origination itself keeps working. **Still needs an organizer
+confirmation or a repayment-cycle test that distinguishes the two accounting models before
+this is truly resolved** — do not delete this entry on the strength of the origination test
+alone.
 
 ## Risks and fallbacks
 

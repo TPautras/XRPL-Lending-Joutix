@@ -30,13 +30,16 @@ Neither of these is a durable fact yet. Full context, rationale, and removal con
 `docs/PROGRESS.md` → "Open risks (detail)". Run the check before relying on anything downstream
 of it; update that PROGRESS.md entry once resolved, don't let detail pile up back into this file.
 
-- **Signing migration is targeted, not landed** — nothing in `src/ui` implements it yet (its own
-  code comments still say `LoanSet` "stays a scripted flow"). `git status --short src/protocol
+- **Signing migration is targeted, not landed, for the single-signer privileged transactions** —
+  `CredentialCreate`/`CredentialDelete` (authority), `LoanBrokerSet`/`LoanManage`/`VaultCreate`
+  (manager as broker-owner) have no `src/ui` wallet path yet. `git status --short src/protocol
   package.json`; `D` lines mean the old scripted path is gone but its wallet-only replacement
-  isn't built. See "Webapp signing rule" below for what's settled vs. still open.
-- **Devnet protocol version unconfirmed (V1 vs V1.1)** —
-  `curl -s $DEVNET_RPC -d '{"method":"feature"}' | jq '.result.features | to_entries[] | select(.value.name | test("Lending"; "i"))'`;
-  more than one Lending-related amendment enabled means stop and re-derive rather than guess.
+  isn't built. `LoanSet`'s dual-sign is resolved and built — see "Webapp signing rule" below.
+- **Devnet has both V1 and V1.1 live, confirmed 2026-09-13** — the exact "stop and re-derive,
+  escalate to organizers" trigger this repo always said to watch for. Not yet escalated. A
+  quick origination test suggests loan creation on an open-ended vault still works, but the
+  V1-vs-cash-basis accounting question is still open. Full detail, don't re-derive here:
+  `docs/PROGRESS.md` → "Open risks (detail)".
 
 ## Commands
 
@@ -164,13 +167,14 @@ account's own signature?**
   `LoanBrokerSet`/`LoanManage`/`VaultCreate` (the manager, acting as broker-owner, connects
   theirs). None of these need a visitor's wallet — they need that specific privileged account's
   own wallet, connected for that one action, not a seed in `.env`.
-- `LoanSet` is the one exception, and it's decided (not yet built): xrpl.js's
-  `signLoanSetByCounterparty()` needs a raw `Wallet` keypair for the counter-signature, which no
-  browser wallet extension will ever hand the app — so the borrower signs (not submits) via the
-  connected wallet, and a small dedicated **signing service** (TrustFlow's one deliberate
-  exception to "no backend," holding only the broker's key) applies the counter-signature and
-  submits. This is the one place a transaction crosses a server at all. Full spec:
-  `docs/plans/loanset-signing-service.md`. Until that's built, treat `LoanSet` as still scripted.
+- `LoanSet` is the one exception, and it's built: xrpl.js's `signLoanSetByCounterparty()` needs a
+  raw `Wallet` keypair for the counter-signature, which no browser wallet extension will ever hand
+  the app — so the borrower signs (not submits) via the connected wallet
+  (`useLoanSetSubmit()`/`submitLoanSetFromWallet()` in `lib/walletActions.ts`/`lib/walletTx.ts`),
+  and `server/loan-signer` (TrustFlow's one deliberate exception to "no backend," holding only the
+  broker's key) applies the counter-signature and submits, reporting the raw engine code back.
+  This is the one place a transaction crosses a server at all. Full spec:
+  `docs/plans/loanset-signing-service.md`.
 
 If the connected account lacks a precondition the protocol itself enforces (no accepted
 `Credential` on a private vault's `VaultDeposit`, no shares to redeem on a `VaultWithdraw`), the
@@ -183,6 +187,6 @@ is — never as a bare transaction failure. Same base-unit rule as above applies
 - Two-party `LoanSet` signing pattern (fee-before-signing gotcha, `autofill()`'s `>=2x` base fee
   handling): `docs/snippets/loan-set-dual-sign.ts`.
 - The `LoanSet` counter-signing service — TrustFlow's one deliberate exception to "no backend,"
-  planned but not yet built: `docs/plans/loanset-signing-service.md`.
+  built at `server/loan-signer`: `docs/plans/loanset-signing-service.md`.
 - Everything else — current page list, transaction hashes, phase status, demo script, pitch
   timing, deliverables — see the Source of truth list above.

@@ -26,14 +26,10 @@ export function AccountPanel() {
 
   // The wallet may well be pointed at Mainnet or Testnet; the vault and lending
   // amendments only exist on Devnet, so say so rather than failing later at signing.
-  const wrongNetwork = account.networkId !== NETWORK.id
-
-  // xrpl-connect's WalletConnect adapter always opens a fresh pairing request on
-  // reconnect instead of resuming an approved session (confirmed in docs/SEAMS.md,
-  // and true through the library's current unreleased changelog — not a bug in the
-  // pinned version, an accepted adapter limitation). So a reload always disconnects
-  // this wallet; say so instead of leaving it looking like a random failure.
-  const isWalletConnect = account.walletId === 'walletconnect'
+  // Compared by `wss`, not `networkId`: GemWallet reports the same generic
+  // `"xrpl-custom"` id for any user-configured custom node, so the endpoint URL is the
+  // only reliable signal for a custom network (see `lib/network.ts`).
+  const wrongNetwork = account.networkWss !== NETWORK.wss
 
   const copy = async () => {
     await navigator.clipboard.writeText(account.address)
@@ -62,14 +58,6 @@ export function AccountPanel() {
           )}
         </Field>
       </Fields>
-
-      {isWalletConnect && (
-        <p className="border-warn/30 bg-warn-soft text-warn mt-4 rounded-lg border px-3 py-2.5 text-[13px]">
-          WalletConnect sessions don&rsquo;t survive a reload — refreshing this page will disconnect the wallet and
-          you&rsquo;ll need to pair a new <code className="text-foreground">wc:</code> URI. This is a limitation of the
-          connector, not this app.
-        </p>
-      )}
 
       <div className="mt-4 flex flex-wrap gap-2.5">
         <Button asChild variant="outline" size="sm">
