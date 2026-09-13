@@ -18,6 +18,5 @@
     "baseUrl": ".",
     "paths": { "@/*": ["src/ui/*"] }
   },
-  "include": ["src", "vite.config.ts"],
-  "exclude": ["src/protocol"]
+  "include": ["src", "vite.config.ts"]
 }

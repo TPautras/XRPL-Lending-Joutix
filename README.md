@@ -7,7 +7,11 @@ an insurer covers the default risk on a given loan.
 
 Every step — deposit, loan, repayment, default, payout — is native XLS-65 (Single Asset Vault)
 and XLS-66 (Lending Protocol), coupled with Credentials, a Permissioned Domain and TokenEscrow.
-**No custom contracts, no backend, no server-side state.**
+**No custom contracts, no server-side state.** The webapp itself has no backend — the one
+deliberate exception, planned but not yet built, is a narrow signing service for `LoanSet`'s
+counter-signature (no browser wallet extension can produce it); see
+[`docs/plans/loanset-signing-service.md`](./docs/plans/loanset-signing-service.md). Everything
+else stays wallet-to-ledger direct.
 
 | | |
 |---|---|
@@ -27,10 +31,13 @@ and XLS-66 (Lending Protocol), coupled with Credentials, a Permissioned Domain a
 | **Manager** (broker) | Picks which invoices to fund, posts first-loss capital before lending | `LoanBrokerSet` · `LoanBrokerCoverDeposit` |
 | **SME** (borrower) | Borrows against an invoice, repays on schedule | `LoanSet` (dual-signed) · `LoanPay` |
 | **Insurer** | Sells default protection on one loan, locks the covered amount, keeps the premium if the loan performs | `EscrowCreate` / `EscrowFinish` / `EscrowCancel` |
-| **Authority** | Issues the compliance credential the reserve requires | `CredentialCreate` · `PermissionedDomainSet` |
 
 Share value rises mechanically as the reserve collects interest — there is no distribution
 transaction, the appreciation is in the share price itself (`AssetsTotal` growth).
+
+A fifth account, the **Authority**, sits outside these four: it isn't an economic participant, it
+just issues the compliance credential the reserve requires (`CredentialCreate` ·
+`PermissionedDomainSet`).
 
 **The gate.** Every participant needs a `Credential` accepted by a `PermissionedDomain` before
 they can deposit. **Withdrawal is deliberately left ungated** — an investor whose credential
@@ -211,7 +218,7 @@ pair that dual-signed it (§4) · the two-party `LoanSet` fee ordering, and the 
 
 ## The webapp
 
-`npm run dev` → `localhost:5173`. React 19 + Vite, no backend, no router library: six hash routes
+`npm run dev` → `localhost:5173`. React 19 + Vite, no router library: six hash routes
 over a `hashchange` listener (`src/ui/lib/router.ts`), which also means the page still works from
 `file://` or a stale `vite preview` if the dev server dies mid-pitch.
 
@@ -229,16 +236,24 @@ over a `hashchange` listener (`src/ui/lib/router.ts`), which also means the page
 `saveState()` on every write — carries the object IDs, role addresses, the last gate matrix and
 the transaction log. Everything else is a live RPC query or the `ledger` subscription against
 `NETWORK.wss`. If a page needs a fact in neither, the fix is to write it into the state file from
-the protocol scripts, not to add a server.
+the protocol scripts, not to add a server. (This is about *reads*; see below for the one
+write-path exception.)
 
 **What the browser signs is decided by one question, and it is worth saying on stage:** does the
 transaction need anything beyond the connected account's own signature? `VaultDeposit`,
 `VaultWithdraw`, `LoanPay`, `LoanBrokerCoverDeposit`, `CredentialAccept` and the protection
 escrows do not — Dashboard, The Gate and Market submit all of them from a connected wallet
-through `lib/walletActions.ts`. `LoanSet` does: it is dual-signed by borrower *and* broker, and
-no single wallet holds both keys, so it stays scripted in `src/protocol/` — as do the authority's
-`CredentialCreate`/`CredentialDelete` and the manager's `LoanBrokerSet`, `LoanManage` and
-`VaultCreate`, each of which needs a key this app never asks a visitor for.
+through `lib/walletActions.ts`. The authority's `CredentialCreate`/`CredentialDelete` and the
+manager's `LoanBrokerSet`/`LoanManage`/`VaultCreate` need a privileged key no visitor's wallet
+holds, but only one signature each — the plan (not yet built, see
+[`docs/plans/loanset-signing-service.md`](./docs/plans/loanset-signing-service.md)) is for the
+authority/manager to connect their own wallet for that one action, same as anyone else, rather
+than keep a scripted seed. `LoanSet` is the exception that can't resolve that way at all: it's
+dual-signed, and no wallet extension can produce the broker's counter-signature (it needs a raw
+keypair, not a signed blob). For that one transaction, and only that one, the borrower signs via
+their wallet and a small dedicated signing service — TrustFlow's one deliberate exception to "no
+backend" — applies the counter-signature and submits. Until that service is built, `LoanSet`
+stays scripted in `src/protocol/`, same as today.
 
 A wallet with no accepted `Credential` still gets `tecNO_AUTH` from the private reserve's
 `VaultDeposit`. That is the gate working, and the screen shows the raw engine code as the
