@@ -1,4 +1,4 @@
-# TrustFlow — manual developer feedback report
+# TrustFlow - manual developer feedback report
 
 **Team:** TrustFlow · **Track:** 1 (open-ended vault, Lending Protocol V1) · **Flavour:** Loaded
 **Environment:** Custom Hackathon Devnet, `rippled 3.4.0-rc1`, `network_id 4001` · **Library:** `xrpl@5.2.0`
